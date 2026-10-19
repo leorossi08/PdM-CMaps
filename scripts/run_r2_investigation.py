@@ -8,23 +8,39 @@ import pandas as pd
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.metrics import r2_score
 
-from pdm_cmaps.data import CMapssLoader
-from pdm_cmaps.diagnostics import (
-    capacity_sweep, compare_r2_subsets, compare_split_strategies,
+from data import CMapssLoader
+from diagnostics import (
+    capacity_sweep, compare_rul_subsets, compare_split_strategies,
     distribution_shift, extra_trees_baseline, feature_signal,
     future_cycle_score, learning_curves, permutation_importances,
     repeated_grouped_cv, residual_segments, summarize_learning_curves,
 )
-from pdm_cmaps.plotting import plot_baseline, plot_learning_curves, plot_regime_scores, plot_sensor_variance
-from pdm_cmaps.regimes import RegimeDecoupler
-from pdm_cmaps.schema import DEFAULT_HEALTHY_CYCLE_LIMIT, DEFAULT_RANDOM_STATE, DEFAULT_RESULTS_DIR, SENSOR_COLUMNS, SETTING_COLUMNS, SUBSETS
-from pdm_cmaps.splitting import split_engine_units
-from pdm_cmaps.targets import compute_piecewise_rul, regression_metrics
-from pdm_cmaps.virtual_sensor import VirtualSensor
+from plotting import (
+    plot_baseline,
+    plot_learning_curves,
+    plot_regime_scores,
+    plot_sensor_variance,
+    plot_subset_rul_parity,
+)
+from regimes import RegimeDecoupler
+from schema import DEFAULT_HEALTHY_CYCLE_LIMIT, DEFAULT_RANDOM_STATE, DEFAULT_RESULTS_DIR, SENSOR_COLUMNS, SETTING_COLUMNS, SUBSETS
+from splitting import split_engine_units
+from targets import compute_piecewise_rul, regression_metrics
+from virtual_sensor import VirtualSensor
 
 
-def _per_regime_t50(fd4: pd.DataFrame, output_dir: Path, seed: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _progress(message: str) -> None:
+    print(f"[r2] {message}", flush=True)
+
+
+def _per_regime_t50(
+    fd4: pd.DataFrame,
+    table_dir: Path,
+    figure_dir: Path,
+    seed: int,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Fit healthy-row T50 virtual sensors by regime on a fixed engine holdout."""
+    _progress("FD004 T50: splitting engines and fitting operating regimes")
     train_units, test_units = split_engine_units(fd4, test_ratio=0.25, random_state=seed)
     train = fd4.loc[fd4["unit_id"].isin(train_units)].copy()
     test = fd4.loc[fd4["unit_id"].isin(test_units)].copy()
@@ -35,6 +51,7 @@ def _per_regime_t50(fd4: pd.DataFrame, output_dir: Path, seed: int) -> tuple[pd.
     test_healthy = test.loc[test["cycle"] <= DEFAULT_HEALTHY_CYCLE_LIMIT]
     sensors = CMapssLoader.informative_sensors(fd4)
     features = [sensor for sensor in sensors if sensor != "T50"]
+    _progress("FD004 T50: fitting and scoring the virtual sensor")
     model = VirtualSensor("T50", features, estimator=extra_trees_baseline(seed), random_state=seed).fit(train_healthy)
     prediction = model.predict(test_healthy)
     rows = []
@@ -42,11 +59,11 @@ def _per_regime_t50(fd4: pd.DataFrame, output_dir: Path, seed: int) -> tuple[pd.
         metric = regression_metrics(part["T50"], part["prediction"])
         rows.append({"Regime_ID": int(regime_id), "Test_rows": len(part), **metric})
     scores = pd.DataFrame(rows)
-    scores.to_csv(output_dir / "fd004_healthy_t50_by_regime.csv", index=False)
+    scores.to_csv(table_dir / "fd004_healthy_t50_by_regime.csv", index=False)
     variance = RegimeDecoupler.decompose_sensors(train, ["T50", "T24", "T30", "P30", "Nf"])
-    variance.to_csv(output_dir / "fd004_sensor_variance.csv", index=False)
-    plot_regime_scores(scores, output_dir / "fd004_t50_regime_scores.png")
-    plot_sensor_variance(variance, output_dir / "fd004_sensor_variance.png")
+    variance.to_csv(table_dir / "fd004_sensor_variance.csv", index=False)
+    plot_regime_scores(scores, figure_dir / "fd004_t50_regime_scores.png")
+    plot_sensor_variance(variance, figure_dir / "fd004_sensor_variance.png")
 
     per_engine = []
     for regime_id, part in prediction.groupby("regime_id"):
@@ -57,6 +74,7 @@ def _per_regime_t50(fd4: pd.DataFrame, output_dir: Path, seed: int) -> tuple[pd.
         temp["prediction"] = part["prediction"].to_numpy()
         per_engine.append(temp)
     scored = pd.concat(per_engine, ignore_index=True)
+    _progress("FD004 T50: bootstrapping engine-level confidence intervals (2,000 resamples)")
     rng = np.random.default_rng(seed)
     engines = np.sort(scored["unit_id"].unique())
     bootstrap = np.full((2000, len(scores)), np.nan)
@@ -75,7 +93,7 @@ def _per_regime_t50(fd4: pd.DataFrame, output_dir: Path, seed: int) -> tuple[pd.
         values = bootstrap[:, column]
         ci_rows.append({"Regime_ID": int(row["Regime_ID"]), "R2": row["R2"], "CI_low_2.5%": np.nanpercentile(values, 2.5), "CI_high_97.5%": np.nanpercentile(values, 97.5)})
     intervals = pd.DataFrame(ci_rows)
-    intervals.to_csv(output_dir / "fd004_t50_engine_bootstrap.csv", index=False)
+    intervals.to_csv(table_dir / "fd004_t50_engine_bootstrap.csv", index=False)
     if 3 in set(intervals["Regime_ID"]):
         regime3_column = list(scores["Regime_ID"]).index(3)
         other_columns = [index for index, regime_id in enumerate(scores["Regime_ID"]) if regime_id != 3]
@@ -85,32 +103,61 @@ def _per_regime_t50(fd4: pd.DataFrame, output_dir: Path, seed: int) -> tuple[pd.
             "estimate": float(scores.loc[scores["Regime_ID"] == 3, "R2"].iloc[0] - scores.loc[scores["Regime_ID"] != 3, "R2"].mean()),
             "CI_low_2.5%": float(np.nanpercentile(difference, 2.5)),
             "CI_high_97.5%": float(np.nanpercentile(difference, 97.5)),
-        }]).to_csv(output_dir / "fd004_t50_regime3_contrast.csv", index=False)
+        }]).to_csv(table_dir / "fd004_t50_regime3_contrast.csv", index=False)
+    _progress("FD004 T50: diagnostics complete")
     return scores, variance
 
 
 def run(output_dir: Path, seed: int, extended: bool = False, nested_cv: bool = False) -> dict[str, pd.DataFrame]:
     """Execute the notebook's cross-subset RUL diagnostics and save tables/figures."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    table_dir = output_dir / "tables"
+    figure_dir = output_dir / "figures"
+    table_dir.mkdir(parents=True, exist_ok=True)
+    figure_dir.mkdir(parents=True, exist_ok=True)
+    _progress("Loading C-MAPSS subsets")
     loader = CMapssLoader()
     datasets = loader.load_all()
     for subset, frame in datasets.items():
+        _progress(f"Preparing {subset} RUL targets")
         frame["RUL"] = compute_piecewise_rul(frame)
     features = ["cycle", *SETTING_COLUMNS, *SENSOR_COLUMNS]
 
-    baseline, folds, oof = compare_r2_subsets(datasets, features, random_state=seed)
-    baseline.to_csv(output_dir / "rul_grouped_cv_baseline.csv", index=False)
-    plot_baseline(baseline, output_dir / "rul_grouped_cv_baseline.png")
+    _progress("Running grouped engine cross-validation baseline across all subsets")
+    baseline, folds, oof = compare_rul_subsets(datasets, features, random_state=seed)
+    _progress("Saving baseline scores and residual summaries")
+    baseline.to_csv(table_dir / "rul_grouped_cv_baseline.csv", index=False)
+    plot_baseline(baseline, figure_dir / "rul_grouped_cv_baseline.png")
+    plot_subset_rul_parity(datasets, oof, figure_dir / "rul_actual_vs_predicted_by_subset.png")
+    prediction_frames = []
     for subset, result in folds.items():
-        result.to_csv(output_dir / f"{subset.lower()}_baseline_folds.csv", index=False)
-        residual_segments(datasets[subset], datasets[subset]["RUL"], oof[subset], subset).to_csv(output_dir / f"{subset.lower()}_residual_bands.csv", index=False)
+        result.to_csv(table_dir / f"{subset.lower()}_baseline_folds.csv", index=False)
+        residual_segments(datasets[subset], datasets[subset]["RUL"], oof[subset], subset).to_csv(table_dir / f"{subset.lower()}_residual_bands.csv", index=False)
+        predictions = pd.DataFrame({
+            "Subpart": subset,
+            "unit_id": datasets[subset]["unit_id"].to_numpy(),
+            "cycle": datasets[subset]["cycle"].to_numpy(),
+            "RUL_actual": datasets[subset]["RUL"].to_numpy(),
+            "RUL_predicted": oof[subset],
+        })
+        prediction_frames.append(predictions)
+    pd.concat(prediction_frames, ignore_index=True).to_csv(table_dir / "rul_grouped_cv_predictions.csv", index=False)
 
-    split_rows = [{"Subpart": subset, **compare_split_strategies(frame, features, seed)} for subset, frame in datasets.items()]
+    _progress("Comparing row-based and engine-based holdout splits")
+    split_rows = []
+    for subset, frame in datasets.items():
+        _progress(f"Split comparison: {subset}")
+        split_rows.append({"Subpart": subset, **compare_split_strategies(frame, features, seed)})
     split_table = pd.DataFrame(split_rows)
-    split_table.to_csv(output_dir / "row_vs_engine_split.csv", index=False)
-    future = pd.DataFrame([{"Subpart": subset, **future_cycle_score(frame, features, seed)} for subset, frame in datasets.items()])
-    future.to_csv(output_dir / "future_cycle_holdout.csv", index=False)
+    split_table.to_csv(table_dir / "row_vs_engine_split.csv", index=False)
+    _progress("Scoring future-cycle holdouts")
+    future_rows = []
+    for subset, frame in datasets.items():
+        _progress(f"Future-cycle holdout: {subset}")
+        future_rows.append({"Subpart": subset, **future_cycle_score(frame, features, seed)})
+    future = pd.DataFrame(future_rows)
+    future.to_csv(table_dir / "future_cycle_holdout.csv", index=False)
 
+    _progress("Summarizing target and out-of-fold prediction profiles")
     profiles = []
     for subset, frame in datasets.items():
         residual = frame["RUL"].to_numpy() - oof[subset]
@@ -119,9 +166,10 @@ def run(output_dir: Path, seed: int, extended: bool = False, nested_cv: bool = F
             "RUL_variance": frame["RUL"].var(), "OOF_RMSE": float(np.sqrt(np.mean(residual ** 2))),
         })
     target_profiles = pd.DataFrame(profiles)
-    target_profiles.to_csv(output_dir / "target_profiles.csv", index=False)
+    target_profiles.to_csv(table_dir / "target_profiles.csv", index=False)
 
-    regime_scores, sensor_variance = _per_regime_t50(datasets["FD004"], output_dir, seed)
+    _progress("Starting FD004 per-regime T50 diagnostics")
+    regime_scores, sensor_variance = _per_regime_t50(datasets["FD004"], table_dir, figure_dir, seed)
     results = {
         "baseline": baseline,
         "split_comparison": split_table,
@@ -132,27 +180,46 @@ def run(output_dir: Path, seed: int, extended: bool = False, nested_cv: bool = F
     }
 
     if extended:
+        _progress("Extended diagnostics: model capacity sweep")
         capacity = capacity_sweep(datasets, features, seed)
-        capacity.to_csv(output_dir / "capacity_sweep.csv", index=False)
-        learning_repeats = pd.concat([learning_curves(frame, features, subset, random_state=seed) for subset, frame in datasets.items()], ignore_index=True)
-        learning_repeats.to_csv(output_dir / "learning_curve_repeats.csv", index=False)
+        capacity.to_csv(table_dir / "capacity_sweep.csv", index=False)
+        learning_repeats_by_subset = []
+        for subset, frame in datasets.items():
+            _progress(f"Extended diagnostics: learning curves for {subset}")
+            learning_repeats_by_subset.append(learning_curves(frame, features, subset, random_state=seed))
+        learning_repeats = pd.concat(learning_repeats_by_subset, ignore_index=True)
+        learning_repeats.to_csv(table_dir / "learning_curve_repeats.csv", index=False)
         learning = summarize_learning_curves(learning_repeats)
-        learning.to_csv(output_dir / "learning_curves.csv", index=False)
-        plot_learning_curves(learning, output_dir / "learning_curves.png")
-        signal = pd.concat([feature_signal(frame, features, subset, random_state=seed) for subset, frame in datasets.items()], ignore_index=True)
-        signal.to_csv(output_dir / "feature_signal.csv", index=False)
-        importance = pd.concat([permutation_importances(frame, features, subset, seed) for subset, frame in datasets.items()], ignore_index=True)
-        importance.to_csv(output_dir / "permutation_importance.csv", index=False)
-        repeated = pd.concat([repeated_grouped_cv(frame, features, subset, random_state=seed) for subset, frame in datasets.items()], ignore_index=True)
-        repeated.to_csv(output_dir / "repeated_grouped_cv.csv", index=False)
+        learning.to_csv(table_dir / "learning_curves.csv", index=False)
+        plot_learning_curves(learning, figure_dir / "learning_curves.png")
+        signal_by_subset = []
+        for subset, frame in datasets.items():
+            _progress(f"Extended diagnostics: feature signal for {subset}")
+            signal_by_subset.append(feature_signal(frame, features, subset, random_state=seed))
+        signal = pd.concat(signal_by_subset, ignore_index=True)
+        signal.to_csv(table_dir / "feature_signal.csv", index=False)
+        importance_by_subset = []
+        for subset, frame in datasets.items():
+            _progress(f"Extended diagnostics: permutation importance for {subset}")
+            importance_by_subset.append(permutation_importances(frame, features, subset, seed))
+        importance = pd.concat(importance_by_subset, ignore_index=True)
+        importance.to_csv(table_dir / "permutation_importance.csv", index=False)
+        repeated_by_subset = []
+        for subset, frame in datasets.items():
+            _progress(f"Extended diagnostics: repeated grouped CV for {subset}")
+            repeated_by_subset.append(repeated_grouped_cv(frame, features, subset, random_state=seed))
+        repeated = pd.concat(repeated_by_subset, ignore_index=True)
+        repeated.to_csv(table_dir / "repeated_grouped_cv.csv", index=False)
         high, low = str(baseline.iloc[0]["Subpart"]), str(baseline.iloc[-1]["Subpart"])
+        _progress(f"Extended diagnostics: feature distribution shift ({high} vs {low})")
         shift = distribution_shift(datasets[high], datasets[low], features, high, low, random_state=seed)
-        shift.to_csv(output_dir / "feature_distribution_shift.csv", index=False)
+        shift.to_csv(table_dir / "feature_distribution_shift.csv", index=False)
         results.update({"capacity": capacity, "learning_curves": learning, "feature_signal": signal, "permutation_importance": importance, "repeated_cv": repeated, "distribution_shift": shift})
 
     if nested_cv:
+        _progress("Running nested grouped cross-validation for model depth selection")
         nested = _nested_depth_cv(datasets, features, seed)
-        nested.to_csv(output_dir / "nested_depth_cv.csv", index=False)
+        nested.to_csv(table_dir / "nested_depth_cv.csv", index=False)
         results["nested_depth_cv"] = nested
 
     return results
@@ -163,12 +230,14 @@ def _nested_depth_cv(datasets: dict[str, pd.DataFrame], features: list[str], see
     rows = []
     depths = (4, 8, 16, None)
     for subset, frame in datasets.items():
+        _progress(f"Nested CV: preparing {subset}")
         groups = frame["unit_id"].to_numpy()
         x, y = frame[features].to_numpy(dtype=float), frame["RUL"].to_numpy(dtype=float)
         units = np.random.default_rng(seed).permutation(np.unique(groups))
         fold_for = {unit: index % 3 for index, unit in enumerate(units)}
         outer_fold_ids = np.array([fold_for[unit] for unit in groups])
         for outer in range(3):
+            _progress(f"Nested CV: {subset}, outer fold {outer + 1}/3 (inner depth selection)")
             train_idx, test_idx = np.flatnonzero(outer_fold_ids != outer), np.flatnonzero(outer_fold_ids == outer)
             train_groups = groups[train_idx]
             inner_units = np.random.default_rng(seed + 1 + outer).permutation(np.unique(train_groups))
@@ -197,7 +266,8 @@ def main() -> None:
     results = run(args.output_dir, args.seed, args.extended, args.nested_cv)
     for name, table in results.items():
         print(f"{name}: {len(table)} rows")
-    print(f"Results written to {args.output_dir.resolve()}")
+    print(f"Tables written to {(args.output_dir / 'tables').resolve()}")
+    print(f"Figures written to {(args.output_dir / 'figures').resolve()}")
 
 
 if __name__ == "__main__":

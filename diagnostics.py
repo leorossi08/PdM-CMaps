@@ -9,9 +9,9 @@ from sklearn.inspection import permutation_importance
 from sklearn.metrics import r2_score
 from sklearn.model_selection import GroupShuffleSplit, train_test_split
 
-from .evaluation import grouped_oof
-from .schema import DEFAULT_RANDOM_STATE
-from .targets import regression_metrics
+from evaluation import grouped_oof
+from schema import DEFAULT_RANDOM_STATE
+from targets import regression_metrics
 
 
 def extra_trees_baseline(random_state: int = DEFAULT_RANDOM_STATE, **kwargs) -> ExtraTreesRegressor:
@@ -145,7 +145,10 @@ def feature_signal(frame: pd.DataFrame, features: list[str], subset: str, sample
     sample = frame.sample(n=min(sample_size, len(frame)), random_state=random_state)
     x = sample[features].replace([np.inf, -np.inf], np.nan).fillna(0.0)
     mutual_info = mutual_info_regression(x, sample["RUL"], random_state=random_state)
-    correlation = x.corrwith(sample["RUL"]).abs()
+    correlation = pd.Series(np.nan, index=features, dtype=float)
+    varying_features = [feature for feature in features if x[feature].nunique() > 1]
+    if varying_features and sample["RUL"].nunique() > 1:
+        correlation.loc[varying_features] = x[varying_features].corrwith(sample["RUL"]).abs()
     return pd.DataFrame({
         "Subpart": subset,
         "Feature": features,

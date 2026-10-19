@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .schema import COLUMNS, DEFAULT_DATA_DIR, SENSOR_COLUMNS, SUBSETS
+from schema import COLUMNS, DEFAULT_DATA_DIR, SENSOR_COLUMNS, SUBSETS
 
 
 class CMapssLoader:

@@ -4,9 +4,9 @@ import numpy as np
 import pandas as pd
 from sklearn.base import clone
 
-from .anomaly import StatisticalAnomalyDetector
-from .models.factory import get_model
-from .schema import DEFAULT_HEALTHY_CYCLE_LIMIT
+from anomaly import StatisticalAnomalyDetector
+from models.factory import get_model
+from schema import DEFAULT_HEALTHY_CYCLE_LIMIT
 
 
 class VirtualSensor:
@@ -23,7 +23,9 @@ class VirtualSensor:
         self.target_sensor = target_sensor
         self.feature_cols = feature_cols
         self.healthy_cycle_limit = healthy_cycle_limit
-        self.estimator = estimator or get_model("extra_trees", n_estimators=60, max_depth=12, random_state=random_state)
+        self.estimator = estimator if estimator is not None else get_model(
+            "extra_trees", n_estimators=60, max_depth=12, random_state=random_state
+        )
         self.models: dict[int, object] = {}
 
     def fit(self, train_frame: pd.DataFrame) -> "VirtualSensor":

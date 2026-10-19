@@ -1,6 +1,6 @@
 # PdM-CMaps
 
-Script-based Python version of the C-MAPSS teaching analyses. Shared data/model logic lives in `pdm_cmaps/`; the `scripts/` entry points compose it into the maintenance guide and the R² investigation. No notebook files are required.
+Script-based Python version of the C-MAPSS teaching analyses. Shared data and model logic lives at the repository root; the `scripts/` entry points compose it into the maintenance guide and the R² investigation. No notebook files are required.
 
 ## Data
 
@@ -35,6 +35,8 @@ python -m scripts.run_r2_investigation --nested-cv
 ```
 
 Each script accepts `--output-dir` and `--seed`. Generated CSV tables and PNG figures are written beneath `results/`; existing result files with the same names are replaced on rerun.
+
+Each run organizes its output directory into `tables/` and `figures/`. The maintenance guide includes a held-out failure-detection chart, actual-versus-predicted RUL for the best holdout model, and prediction metrics/plots for all 21 sensor channels. Individual sensor plots color parity points by operating regime and compare actual/predicted cycle-level distributions by held-out engine; they are saved under `figures/sensor_channels/`. Additional regime-specific sensor timelines use 50-cycle windows, with one figure per regime/window under `figures/sensor_cycle_windows/` and matching R²/RMSE/MAE values in `tables/sensor_cycle_window_metrics.csv`. The R² investigation includes grouped out-of-fold RUL parity plots and prediction rows for FD001 through FD004.
 
 ## Package responsibilities
 

@@ -1,17 +1,20 @@
 """Focused contracts for shared C-MAPSS data and analysis components."""
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
 from sklearn.ensemble import ExtraTreesRegressor
 
-from pdm_cmaps.data import CMapssLoader
-from pdm_cmaps.evaluation import grouped_oof
-from pdm_cmaps.features import engineer_causal_temporal_features
-from pdm_cmaps.regimes import RegimeDecoupler
-from pdm_cmaps.splitting import split_engine_units
-from pdm_cmaps.targets import compute_piecewise_rul, nasa_scoring_function
-from pdm_cmaps.schema import COLUMNS, SENSOR_COLUMNS
+from data import CMapssLoader
+from diagnostics import feature_signal
+from evaluation import grouped_oof
+from features import engineer_causal_temporal_features
+from regimes import RegimeDecoupler
+from splitting import split_engine_units
+from targets import compute_piecewise_rul, nasa_scoring_function
+from schema import COLUMNS, SENSOR_COLUMNS
 
 
 def sample_frame(engine_count: int = 10) -> pd.DataFrame:
@@ -77,6 +80,18 @@ def test_grouped_oof_covers_rows_without_engine_leakage():
     assert len(prediction) == len(frame)
     assert np.isfinite(prediction).all()
     assert len(folds) == 5
+
+
+def test_feature_signal_handles_constant_features_without_runtime_warning():
+    frame = sample_frame(engine_count=3)
+    frame["RUL"] = compute_piecewise_rul(frame)
+    frame["constant"] = 1.0
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        result = feature_signal(frame, ["constant", "cycle"], "test")
+    constant_correlation = result.loc[result["Feature"] == "constant", "Abs_correlation"].iloc[0]
+    assert np.isnan(constant_correlation)
+    assert np.isfinite(result.loc[result["Feature"] == "cycle", "Abs_correlation"]).all()
 
 
 def test_loader_rejects_duplicate_engine_cycle_rows():

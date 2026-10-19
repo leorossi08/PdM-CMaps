@@ -1,0 +1,2 @@
+Model,R2,RMSE,MAE,target_variance,NASA_Score,Mean_NASA_Score,Late_Pred_Pct
+PyTorch LSTM,0.5871,26.204,20.08,1663.001,456718.93,30.405,36.7

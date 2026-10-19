@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from .schema import DEFAULT_HEALTHY_CYCLE_LIMIT
+from schema import DEFAULT_HEALTHY_CYCLE_LIMIT
 
 
 class StatisticalAnomalyDetector:

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-from .schema import DEFAULT_RUL_CAP
+from schema import DEFAULT_RUL_CAP
 
 
 def compute_piecewise_rul(

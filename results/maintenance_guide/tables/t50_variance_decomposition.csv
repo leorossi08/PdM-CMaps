@@ -1,0 +1,2 @@
+target,total_var,total_sd,between_regime_var,within_regime_var,pct_between_regime,pct_within_regime,regime_baseline_r2,regime_baseline_rmse
+T50,14224.187117567677,119.26519658964922,14145.641497080227,78.54562048745763,99.44780239574857,0.5521976042514889,0.9944780239574856,8.862596712445942
