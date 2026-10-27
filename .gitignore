@@ -8,3 +8,17 @@ env/
 .vscode/
 .env
 .idea/*
+catboost_info/
+.pytest_cache/
+
+# Copilot/agent tooling
+.agents/
+.copilot/
+
+# Generated artifacts (results, figures, dashboard)
+results/
+dashboard.html
+
+# Local notes/docs (keep only README files tracked)
+*.md
+!README.md

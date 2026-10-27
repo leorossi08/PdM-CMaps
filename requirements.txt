@@ -4,5 +4,9 @@ scipy
 scikit-learn
 matplotlib
 pytest
+# Gradient Boosting and trees
+catboost
+xgboost
+lightgbm
 # Optional sequence model support:
 torch

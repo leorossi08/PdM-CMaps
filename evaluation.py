@@ -49,9 +49,10 @@ def grouped_oof(
 class RULBenchmark:
     """Compare the shared RUL model pool using holdout or grouped-fold evaluation."""
 
-    def __init__(self, random_state: int = DEFAULT_RANDOM_STATE, model_pool=None):
+    def __init__(self, random_state: int = DEFAULT_RANDOM_STATE, model_pool=None, verbose: bool = True):
         self.random_state = random_state
         self.model_pool = model_pool
+        self.verbose = verbose
 
     def get_models(self) -> dict:
         """Return fresh model instances for each benchmark run."""
@@ -75,13 +76,20 @@ class RULBenchmark:
         baseline = np.full(len(y_test), y_train.mean())
         predictions["Baseline (Mean RUL)"] = baseline
         records = [{"Model": "Baseline (Mean RUL)", **evaluate_rul_predictions(y_test, baseline), "Fit_Time_s": 0.0}]
-        for name, estimator in self.get_models().items():
+        models = self.get_models()
+        total_models = len(models)
+        for idx, (name, estimator) in enumerate(models.items(), start=1):
+            if self.verbose:
+                print(f"  [benchmark] [{idx}/{total_models}] Fitting '{name}' on {len(x_train)} samples...", flush=True)
             started = time.perf_counter()
             estimator.fit(x_train, y_train)
             fit_seconds = time.perf_counter() - started
             prediction = np.clip(estimator.predict(x_test), 0.0, None)
             predictions[name] = prediction
-            records.append({"Model": name, **evaluate_rul_predictions(y_test, prediction), "Fit_Time_s": round(fit_seconds, 3)})
+            metrics = evaluate_rul_predictions(y_test, prediction)
+            if self.verbose:
+                print(f"  [benchmark] -> '{name}' done in {fit_seconds:.2f}s | R²: {metrics['R2']:.4f} | RMSE: {metrics['RMSE']:.2f} | MAE: {metrics['MAE']:.2f}", flush=True)
+            records.append({"Model": name, **metrics, "Fit_Time_s": round(fit_seconds, 3)})
         return pd.DataFrame(records), predictions
 
     def cross_validate(
@@ -97,15 +105,22 @@ class RULBenchmark:
         groups = frame["unit_id"].to_numpy()
         splitter = GroupKFold(n_splits=n_splits)
         records = []
-        for name, prototype in self.get_models().items():
+        models = self.get_models()
+        total_models = len(models)
+        for idx, (name, prototype) in enumerate(models.items(), start=1):
+            if self.verbose:
+                print(f"  [grouped-cv] [{idx}/{total_models}] Running {n_splits}-fold grouped CV for '{name}'...", flush=True)
             fold_metrics = []
             for train_idx, test_idx in splitter.split(x, y, groups):
                 model = clone(prototype).fit(x[train_idx], y[train_idx])
                 prediction = np.clip(model.predict(x[test_idx]), 0.0, None)
                 fold_metrics.append(evaluate_rul_predictions(y[test_idx], prediction))
-            records.append({
+            summary_row = {
                 "Model": name,
                 **{f"CV_{metric}_Mean": float(np.mean([item[metric] for item in fold_metrics])) for metric in ("R2", "RMSE", "MAE", "NASA_Score")},
                 **{f"CV_{metric}_Std": float(np.std([item[metric] for item in fold_metrics], ddof=1)) for metric in ("R2", "RMSE", "MAE", "NASA_Score")},
-            })
+            }
+            if self.verbose:
+                print(f"  [grouped-cv] -> '{name}' CV Mean R²: {summary_row['CV_R2_Mean']:.4f} (±{summary_row['CV_R2_Std']:.4f}) | RMSE: {summary_row['CV_RMSE_Mean']:.2f}", flush=True)
+            records.append(summary_row)
         return pd.DataFrame(records)

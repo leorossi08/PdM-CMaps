@@ -72,6 +72,8 @@ class RegimeDecoupler:
             "within_regime_var": within,
             "pct_between_regime": between / total * 100.0 if total else 0.0,
             "pct_within_regime": within / total * 100.0 if total else 0.0,
+            "Between_regime_pct": between / total * 100.0 if total else 0.0,
+            "Within_regime_pct": within / total * 100.0 if total else 0.0,
             "regime_baseline_r2": between / total if total else 0.0,
             "regime_baseline_rmse": float(np.sqrt(within)),
             "clusters": summaries.to_dict(orient="records"),

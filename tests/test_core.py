@@ -62,6 +62,10 @@ def test_variance_decomposition_adds_to_total():
     frame["regime_id"] = frame["unit_id"] % 3
     result = RegimeDecoupler.variance_decomposition(frame, "T50")
     assert np.isclose(result["total_var"], result["between_regime_var"] + result["within_regime_var"])
+    assert np.isclose(result["pct_between_regime"] + result["pct_within_regime"], 100.0)
+    assert result["Between_regime_pct"] == result["pct_between_regime"]
+    assert result["Within_regime_pct"] == result["pct_within_regime"]
+    assert 0.0 <= result["regime_baseline_r2"] <= 1.0
 
 
 def test_late_rul_error_has_larger_nasa_penalty():
@@ -99,3 +103,59 @@ def test_loader_rejects_duplicate_engine_cycle_rows():
     duplicated = pd.concat([frame, frame.iloc[[0]]], ignore_index=True)
     with pytest.raises(ValueError, match="Duplicate engine-cycle"):
         CMapssLoader.validate(duplicated)
+
+
+def test_model_pool_includes_padua_algorithms():
+    from models.factory import get_model, get_model_pool
+
+    pool = get_model_pool()
+    assert "CatBoost" in pool
+    assert "XGBoost" in pool
+    assert "LightGBM" in pool
+
+    X = np.random.randn(20, 4)
+    y = np.random.randn(20)
+
+    for name in ["catboost", "xgboost", "lightgbm"]:
+        model = get_model(name, n_estimators=5, max_depth=3, iterations=5, depth=3)
+        model.fit(X, y)
+        pred = model.predict(X)
+        assert len(pred) == len(y)
+        assert np.isfinite(pred).all()
+
+
+def test_envelope_anomaly_detector():
+    from anomaly import EnvelopeAnomalyDetector
+
+    detector = EnvelopeAnomalyDetector(k_sigma=2.5, healthy_cycle_limit=30, window_size=4, min_consecutive_breaches=2)
+    np.random.seed(42)
+    healthy_actual = 1400.0 + np.random.randn(30) * 1.5
+    healthy_pred = 1400.0 + np.random.randn(30) * 0.2
+    detector.calibrate(healthy_actual, healthy_pred)
+
+    assert detector.sigma_e > 0
+    assert detector.mu_amp > 0
+
+    cycles = np.arange(1, 101)
+    actual = 1400.0 + np.random.randn(100) * 1.5
+    # Add severe thermal runaway / degradation starting at cycle 75
+    actual[74:] += np.linspace(4.0, 30.0, 26)
+    pred = np.full(100, 1400.0)
+
+    df = pd.DataFrame({"unit_id": 1, "cycle": cycles, "T50": actual, "pred": pred})
+    scored_env, summary_env = detector.score_time_series_envelope(df, "T50", "pred")
+
+    assert "envelope_upper" in scored_env.columns
+    assert "envelope_lower" in scored_env.columns
+    assert summary_env["detected"] is True
+    assert summary_env["first_alarm_cycle"] is not None
+    assert summary_env["first_alarm_cycle"] >= 70
+    assert summary_env["eol_cycle"] == 100
+    assert summary_env["lead_time_cycles"] == 100 - summary_env["first_alarm_cycle"]
+
+    scored_geom, summary_geom = detector.score_geometric_envelope(df, "T50")
+    assert "geom_upper_hull" in scored_geom.columns
+    assert "geom_lower_hull" in scored_geom.columns
+    assert summary_geom["detected"] is True
+    assert summary_geom["first_alarm_cycle"] is not None
+
