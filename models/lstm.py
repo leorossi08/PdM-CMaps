@@ -18,7 +18,7 @@ def build_engine_sequences(
     scaler: StandardScaler | None = None,
     fit_scaler: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, StandardScaler]:
-    """Scale rows and form chronological windows without crossing engine boundaries."""
+    """Scale rows and form left-padded causal windows without crossing engines."""
     if seq_length < 1:
         raise ValueError("seq_length must be positive")
     ordered = frame.sort_values(["unit_id", "cycle"]).copy()
@@ -30,17 +30,19 @@ def build_engine_sequences(
     scaled["unit_id"] = ordered["unit_id"].to_numpy()
     scaled["cycle"] = ordered["cycle"].to_numpy()
     sequences, labels = [], []
-    for unit_id, group in scaled.groupby("unit_id", sort=False):
+    target_values = ordered[target_col].astype(float)
+    for _, group in scaled.groupby("unit_id", sort=False):
         features = group[feature_cols].to_numpy(dtype=np.float32)
-        targets = ordered.loc[group.index, target_col].to_numpy(dtype=np.float32)
-        if len(features) < seq_length:
-            pad = np.repeat(features[:1], seq_length - len(features), axis=0)
-            sequences.append(np.vstack([pad, features]))
-            labels.append(targets[-1])
-        else:
-            for end in range(seq_length, len(features) + 1):
-                sequences.append(features[end - seq_length:end])
-                labels.append(targets[end - 1])
+        targets = target_values.loc[group.index].to_numpy(dtype=np.float32)
+        for t in range(len(features)):
+            start = t - seq_length + 1
+            if start < 0:
+                pad = np.repeat(features[:1], -start, axis=0)
+                seq = np.vstack([pad, features[: t + 1]])
+            else:
+                seq = features[start : t + 1]
+            sequences.append(seq)
+            labels.append(targets[t])
     return np.asarray(sequences, dtype=np.float32), np.asarray(labels, dtype=np.float32), scaler
 
 

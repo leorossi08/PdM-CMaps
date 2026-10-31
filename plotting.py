@@ -103,7 +103,10 @@ def plot_failure_detection(scored: pd.DataFrame, engines: pd.DataFrame, path: Pa
     sensor_ax.grid(True, linestyle=":", alpha=0.5)
 
     alarm_ax.plot(trace["cycle"], trace["ewma_abs_z"], color="#7444ed", linewidth=1.6, label="EWMA absolute Z-score (α = 0.35)")
-    alarm_ax.axhline(3.0, color="#d62728", linestyle=":", linewidth=1.8, label="Alarm threshold (3σ)")
+    if "ewma_ucl" in trace.columns:
+        alarm_ax.plot(trace["cycle"], trace["ewma_ucl"], color="#d62728", linestyle=":", linewidth=1.8, label="Dynamic finite-horizon UCL (3σ)")
+    else:
+        alarm_ax.axhline(3.0, color="#d62728", linestyle=":", linewidth=1.8, label="Alarm threshold (3σ)")
     alarm_cycle = summary["first_alarm_cycle"]
     if pd.notna(alarm_cycle):
         alarm_row = trace.loc[trace["cycle"] == alarm_cycle]

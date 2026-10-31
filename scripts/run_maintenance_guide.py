@@ -204,7 +204,7 @@ def run(
         print(f"\n  [sensor: {target_sensor}] Decoupling variance and fitting Virtual Sensor...", flush=True)
 
         # 1. Variance Decomposition
-        variance = RegimeDecoupler.variance_decomposition(train_full, target_sensor)
+        variance = RegimeDecoupler.variance_decomposition(test_full, target_sensor, reference_frame=train_full)
         pd.DataFrame([variance]).drop(columns=["clusters"]).to_csv(table_dir / f"{s_lower}_variance_decomposition.csv", index=False)
         if target_sensor == "T50":
             pd.DataFrame([variance]).drop(columns=["clusters"]).to_csv(table_dir / "t50_variance_decomposition.csv", index=False)
@@ -277,7 +277,9 @@ def run(
             window_size=5,
             min_consecutive_breaches=min_consecutive_breaches,
         )
-        healthy_res_rows = residual_trace.loc[residual_trace["cycle"] <= healthy_cycle_limit]
+        healthy_res_rows = virtual_model.calibration_predictions_
+        if healthy_res_rows is None:
+            raise RuntimeError("Virtual sensor did not produce OOF healthy calibration predictions")
         envelope_detector.calibrate(healthy_res_rows[target_sensor], healthy_res_rows["prediction"])
 
         sample_trace = residual_trace.loc[residual_trace["unit_id"] == target_unit_id].copy()
@@ -411,7 +413,6 @@ def run(
     for model_name, values in predictions.items():
         if model_name != "y_true":
             test_prediction_frame[f"RUL_predicted_{model_name}"] = values
-    test_prediction_frame.to_csv(table_dir / "rul_holdout_predictions.csv", index=False)
 
     cv_frame = frame.loc[frame["unit_id"].isin(train_units)].copy()
     cv = benchmark.cross_validate(cv_frame, rul_features, n_splits=5)
@@ -448,13 +449,16 @@ def run(
         print("[maintenance] Fitting MiniRocket + RidgeCV and benchmarking RUL on held-out engines", flush=True)
         from models.minirocket import MiniRocketRULModel
 
-        mr_frame = frame.copy()
-        mr_train = mr_frame.loc[mr_frame["unit_id"].isin(train_units)]
-        mr_test = mr_frame.loc[mr_frame["unit_id"].isin(test_units)]
+        mr_train = parts["full_lifecycle_train"].assign(RUL=compute_piecewise_rul(parts["full_lifecycle_train"]))
+        mr_test = parts["full_lifecycle_test"].assign(RUL=compute_piecewise_rul(parts["full_lifecycle_test"]))
         mr_features = [*sensors, "setting_1", "setting_2", "setting_3", "cycle"]
         mr_model = MiniRocketRULModel(seq_length=15, num_kernels=1000, random_state=seed)
         mr_model.fit(mr_train, mr_features, "RUL")
         mr_truth, mr_estimate = mr_model.predict(mr_test)
+        if not np.allclose(mr_truth, predictions["y_true"]):
+            raise AssertionError("MiniRocket predictions are not aligned with the shared holdout rows")
+        predictions["MiniRocket + RidgeCV"] = mr_estimate
+        test_prediction_frame["RUL_predicted_MiniRocket + RidgeCV"] = mr_estimate
         mr_results = pd.DataFrame([{
             "Model": "MiniRocket + RidgeCV",
             **evaluate_rul_predictions(mr_truth, mr_estimate),
@@ -471,6 +475,7 @@ def run(
             k_sigma=3.0,
         )
         tables["rul_minirocket"] = mr_results
+    test_prediction_frame.to_csv(table_dir / "rul_holdout_predictions.csv", index=False)
     return tables
 
 

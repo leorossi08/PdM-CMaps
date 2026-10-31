@@ -1,24 +1,133 @@
+# =============================================================================
+# Python
+# =============================================================================
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.pycache
-.venv
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+pip-wheel-metadata/
+pip-log.txt
+
+# Virtual environments
+.venv/
+venv/
 env/
-.vscode/
-.env
-.idea/*
-catboost_info/
+ENV/
+
+# =============================================================================
+# Testing, linting and type-checking caches
+# =============================================================================
 .pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
 
-# Copilot/agent tooling
-.agents/
-.copilot/
+# =============================================================================
+# Jupyter
+# =============================================================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
 
-# Generated artifacts (results, figures, dashboard)
+# =============================================================================
+# Machine-learning tooling artifacts
+# =============================================================================
+catboost_info/
+lightning_logs/
+wandb/
+mlruns/
+runs/
+tensorboard/
+*.ckpt
+*.pt
+*.pth
+*.joblib
+*.pkl
+*.pickle
+
+# =============================================================================
+# Generated experiment outputs (reproduce with `python run.py`)
+# =============================================================================
 results/
 dashboard.html
+tmp/
+temp/
+scratch/
 
-# Local notes/docs (keep only README files tracked)
+# =============================================================================
+# Documentation: keep only README files tracked
+# =============================================================================
+# Markdown notes, reports and chapters (README.md at any depth stays tracked)
 *.md
 !README.md
+
+# Generated documentation folders and book/thesis outputs
+docs/*
+!docs/README.md
+
+# LaTeX build artifacts and compiled documents
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.out
+*.synctex.gz
+*.toc
+*.pdf
+
+# =============================================================================
+# Secrets and local configuration (never commit credentials)
+# =============================================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+secrets*.json
+
+# =============================================================================
+# Editors, IDEs and operating systems
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =============================================================================
+# AI assistant / agent tooling and local context
+# =============================================================================
+.agents/
+.copilot/
+.context

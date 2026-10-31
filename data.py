@@ -29,6 +29,31 @@ class CMapssLoader:
         """Load FD001 through FD004 using the same validated schema."""
         return {subset: self.load(subset) for subset in SUBSETS}
 
+    def load_test(self, subset: str) -> tuple[pd.DataFrame, pd.Series]:
+        """Load test trajectory text and the corresponding official ground-truth final RUL vector."""
+        subset = subset.upper()
+        if subset not in SUBSETS:
+            raise ValueError(f"subset must be one of {', '.join(SUBSETS)}")
+        test_path = self.data_dir / f"test_{subset}.txt"
+        rul_path = self.data_dir / f"RUL_{subset}.txt"
+        if not test_path.is_file():
+            raise FileNotFoundError(f"Missing test trajectory input: {test_path}")
+        if not rul_path.is_file():
+            raise FileNotFoundError(f"Missing true RUL vector: {rul_path}")
+
+        test_frame = pd.read_csv(test_path, sep=r"\s+", header=None, names=COLUMNS)
+        self.validate(test_frame, test_path)
+        test_frame = test_frame.sort_values(["unit_id", "cycle"]).reset_index(drop=True)
+
+        rul_series = pd.read_csv(rul_path, sep=r"\s+", header=None).iloc[:, 0].astype(float)
+        n_test_engines = test_frame["unit_id"].nunique()
+        if len(rul_series) != n_test_engines:
+            raise ValueError(
+                f"Mismatch in test set engine count: {test_path.name} has {n_test_engines} engines, "
+                f"but {rul_path.name} has {len(rul_series)} RUL values."
+            )
+        return test_frame, rul_series
+
     @staticmethod
     def validate(frame: pd.DataFrame, source: Path | None = None) -> None:
         """Reject malformed, missing, nonnumeric, or duplicate engine-cycle records."""
@@ -47,5 +72,5 @@ class CMapssLoader:
 
     @staticmethod
     def informative_sensors(frame: pd.DataFrame) -> list[str]:
-        """Return sensor channels that vary in the supplied population."""
+        """Return sensor channels that vary in the supplied population (fit strictly post-split on training engines)."""
         return [name for name in SENSOR_COLUMNS if frame[name].nunique() > 1 and frame[name].std() > 1e-6]

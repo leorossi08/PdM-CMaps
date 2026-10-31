@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 from schema import DEFAULT_HEALTHY_CYCLE_LIMIT
 
@@ -22,6 +23,8 @@ class StatisticalAnomalyDetector:
         self.healthy_cycle_limit = healthy_cycle_limit
         self.mu_e = 0.0
         self.sigma_e = 1.0
+        self.abs_z_mean = np.sqrt(2.0 / np.pi)
+        self.abs_z_variance = 1.0 - 2.0 / np.pi
 
     def calibrate(self, healthy_residuals) -> "StatisticalAnomalyDetector":
         """Estimate mean and standard deviation from healthy calibration residuals."""
@@ -32,30 +35,94 @@ class StatisticalAnomalyDetector:
         self.sigma_e = float(residuals.std())
         if self.sigma_e < 1e-8:
             self.sigma_e = 1.0
+        self.calibrate_ewma_distribution(self.compute_z_scores(residuals))
+        return self
+
+    def calibrate_ewma_distribution(self, z_scores) -> "StatisticalAnomalyDetector":
+        """Estimate the in-control distribution of ``|Z|`` from calibration scores."""
+        absolute_scores = np.abs(np.asarray(z_scores, dtype=float))
+        if absolute_scores.size == 0 or not np.isfinite(absolute_scores).all():
+            raise ValueError("z_scores must be a non-empty finite array")
+        self.abs_z_mean = float(absolute_scores.mean())
+        self.abs_z_variance = float(absolute_scores.var())
+        if self.abs_z_variance < 1e-12:
+            self.abs_z_variance = 1e-12
         return self
 
     def compute_z_scores(self, residuals) -> np.ndarray:
         """Standardize residuals against the fitted healthy baseline."""
         return (np.asarray(residuals, dtype=float) - self.mu_e) / self.sigma_e
 
+    def ewma_upper_limits(self, n: int) -> np.ndarray:
+        """Finite-horizon control limits from the calibrated distribution of ``|Z|``."""
+        t = np.arange(1, n + 1, dtype=float)
+        alpha = self.ewma_alpha
+        variance = self.abs_z_variance * alpha / (2.0 - alpha) * (1.0 - (1.0 - alpha) ** (2.0 * t))
+        return self.abs_z_mean + self.threshold_sigma * np.sqrt(variance)
+
+    def ewma_abs_z(self, z_scores) -> np.ndarray:
+        """Compute EWMA(|Z|) from its calibrated in-control mean."""
+        values = np.abs(np.asarray(z_scores, dtype=float))
+        result = np.empty_like(values)
+        state = self.abs_z_mean
+        for i, value in enumerate(values):
+            state = self.ewma_alpha * value + (1.0 - self.ewma_alpha) * state
+            result[i] = state
+        return result
+
+    @staticmethod
+    def test_residual_normality(residuals) -> dict[str, float]:
+        """Perform Shapiro-Wilk and D'Agostino-Pearson tests on healthy residuals."""
+        res = np.asarray(residuals, dtype=float)
+        res_sample = res[: min(5000, len(res))]
+        shapiro_stat, shapiro_p = stats.shapiro(res_sample)
+        norm_stat, norm_p = stats.normaltest(res_sample)
+        return {
+            "shapiro_stat": float(shapiro_stat),
+            "shapiro_p": float(shapiro_p),
+            "dagostino_stat": float(norm_stat),
+            "dagostino_p": float(norm_p),
+        }
+
+    def calibrate_empirical_ucl(self, z_fleet_scores, alpha_level: float = 0.01) -> float:
+        """Calibrate non-parametric empirical UCL from healthy fleet absolute z-scores."""
+        abs_z = np.abs(np.asarray(z_fleet_scores, dtype=float))
+        if abs_z.size == 0:
+            return float(self.abs_z_mean + self.threshold_sigma * np.sqrt(self.abs_z_variance))
+        return float(np.quantile(abs_z, 1.0 - alpha_level))
+
     def score_engine(self, engine_frame: pd.DataFrame, residual_col: str = "residual") -> tuple[pd.DataFrame, dict]:
-        """Add Z/EWMA columns and return the first alarm and healthy-window FAR."""
+        """Add Z/EWMA columns and return first operational alarm (cycle > H) and healthy FAR."""
         ordered = engine_frame.sort_values("cycle").copy().reset_index(drop=True)
         z = self.compute_z_scores(ordered[residual_col].to_numpy())
-        ewma = pd.Series(np.abs(z)).ewm(alpha=self.ewma_alpha, adjust=False).mean().to_numpy()
-        healthy = ordered["cycle"].to_numpy() <= self.healthy_cycle_limit
-        far = float(np.mean(np.abs(z[healthy]) >= self.threshold_sigma)) if healthy.any() else 0.0
-        alarms = np.flatnonzero(ewma >= self.threshold_sigma)
-        first_cycle = int(ordered.iloc[alarms[0]]["cycle"]) if alarms.size else None
+        ewma = self.ewma_abs_z(z)
+        limits = self.ewma_upper_limits(len(ewma))
+
+        healthy_mask = ordered["cycle"].to_numpy() <= self.healthy_cycle_limit
+        monitoring_mask = ordered["cycle"].to_numpy() > self.healthy_cycle_limit
+
+        far = float(np.mean(ewma[healthy_mask] >= limits[healthy_mask])) if healthy_mask.any() else 0.0
+        premature = bool(np.any(ewma[healthy_mask] >= limits[healthy_mask])) if healthy_mask.any() else False
+
+        # Operational alarms are strictly identified during online monitoring (cycle > healthy_cycle_limit)
+        online_alarms = np.flatnonzero((ewma >= limits) & monitoring_mask)
+        first_cycle = int(ordered.iloc[online_alarms[0]]["cycle"]) if online_alarms.size else None
         eol = int(ordered["cycle"].max())
+        lead_time = eol - first_cycle if first_cycle is not None else 0
+
         ordered["z_score"] = z
         ordered["ewma_abs_z"] = ewma
+        ordered["ewma_ucl"] = limits
+
         summary = {
             "unit_id": int(ordered["unit_id"].iloc[0]),
             "eol_cycle": eol,
             "first_alarm_cycle": first_cycle,
-            "lead_time_cycles": eol - first_cycle if first_cycle is not None else 0,
+            "lead_time_cycles": lead_time,
             "healthy_far": far,
+            "healthy_far_pct": far * 100.0,
+            "premature_alarm": premature,
+            "premature_alarm_pct": 100.0 if premature else 0.0,
             "detected": first_cycle is not None,
         }
         return ordered, summary
@@ -69,11 +136,16 @@ class StatisticalAnomalyDetector:
             scored.append(engine_scores)
             summaries.append(summary)
         per_engine = pd.DataFrame(summaries)
+        detected_engines = per_engine.loc[per_engine["detected"]]
+        mean_lead_time_detected = float(detected_engines["lead_time_cycles"].mean()) if not detected_engines.empty else 0.0
+
         return pd.concat(scored, ignore_index=True), per_engine, {
             "total_engines": len(per_engine),
             "detection_rate_pct": float(per_engine["detected"].mean() * 100.0),
             "mean_lead_time_cycles": float(per_engine["lead_time_cycles"].mean()),
+            "mean_lead_time_detected_cycles": mean_lead_time_detected,
             "mean_healthy_false_alarm_pct": float(per_engine["healthy_far"].mean() * 100.0),
+            "premature_alarm_pct": float(per_engine["premature_alarm"].mean() * 100.0),
         }
 
 

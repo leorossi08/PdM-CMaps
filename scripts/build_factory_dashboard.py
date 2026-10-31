@@ -659,14 +659,14 @@ def create_multi_model_t50_raw_figure(
 
 
 def create_rul_point_by_point_figure(rul_df: pd.DataFrame, unit_id: int, alarm_cycle: int | None, eol_cycle: int) -> go.Figure:
-    """Figure 5: Point-by-point RUL actual vs predicted (SEM MÉDIA) across ML models."""
+    """Figure 5: Point-by-point RUL actual vs predicted (SEM MÉDIA) with Model Selector dropdown."""
     unit_rows = rul_df.loc[rul_df["unit_id"] == unit_id].sort_values("cycle").copy().reset_index(drop=True)
     cycles = unit_rows["cycle"].to_numpy()
     actual_rul = unit_rows["RUL_actual"].to_numpy(dtype=float)
 
     fig = go.Figure()
 
-    # Actual RUL
+    # Trace 0: Actual Ground Truth RUL (always visible)
     fig.add_trace(
         go.Scatter(
             x=cycles, y=actual_rul, mode="lines",
@@ -676,27 +676,39 @@ def create_rul_point_by_point_figure(rul_df: pd.DataFrame, unit_id: int, alarm_c
         ),
     )
 
-    # Models predictions - point by point raw (Sem Média)
+    # Models configuration spanning all families (GBDTs, Ensembles, Deep Neural, Linear/SVM)
     models_config = [
-        ("RUL_predicted_XGBoost", "XGBoost Ponto a Ponto Cru (R²=0.816)", PALETTE["cyan_light"], 1.6, "dot"),
-        ("RUL_predicted_LightGBM", "LightGBM Cru (R²=0.812)", PALETTE["emerald"], 1.4, "dot"),
-        ("RUL_predicted_CatBoost", "CatBoost Cru (R²=0.788)", PALETTE["amber"], 1.4, "dash"),
-        ("RUL_predicted_Random Forest", "Random Forest Cru (R²=0.810)", PALETTE["purple"], 1.4, "dashdot"),
+        ("RUL_predicted_XGBoost", "XGBoost", "XGBoost Cru (R²=0.816, RMSE=17.32)", PALETTE["cyan_light"], 1.6, "dot"),
+        ("RUL_predicted_LightGBM", "LightGBM", "LightGBM Cru (R²=0.812, RMSE=17.48)", PALETTE["emerald"], 1.4, "dot"),
+        ("RUL_predicted_Random Forest", "Random Forest", "Random Forest Cru (R²=0.810, RMSE=17.56)", PALETTE["purple"], 1.4, "dashdot"),
+        ("RUL_predicted_HistGradientBoosting", "HistGB", "HistGradientBoosting (R²=0.810, RMSE=17.57)", "#60a5fa", 1.4, "dash"),
+        ("RUL_predicted_MLP", "MLP", "Multilayer Perceptron (MLP) (R²=0.801, RMSE=17.98)", "#f97316", 1.4, "dash"),
+        ("RUL_predicted_CatBoost", "CatBoost", "CatBoost Cru (R²=0.788, RMSE=18.56)", PALETTE["amber"], 1.4, "dash"),
+        ("RUL_predicted_PyTorch CNN", "1D CNN (PyTorch)", "1D CNN PyTorch (R²=0.771, RMSE=19.31)", "#f43f5e", 1.8, "solid"),
+        ("RUL_predicted_Extra Trees", "Extra Trees", "Extra Trees Cru (R²=0.768, RMSE=19.41)", "#a855f7", 1.4, "dot"),
+        ("RUL_predicted_Ridge", "Ridge", "Ridge Linear (R²=0.725, RMSE=21.16)", "#94a3b8", 1.4, "dot"),
+        ("RUL_predicted_MiniRocket + RidgeCV", "MiniRocket", "MiniRocket + RidgeCV (R²=0.712, RMSE=21.90)", "#eab308", 1.4, "dash"),
+        ("RUL_predicted_Support Vector Machine (SVM)", "SVM", "Support Vector Machine (SVM) (R²=0.710, RMSE=21.73)", "#818cf8", 1.8, "solid"),
+        ("RUL_predicted_PyTorch RNN (LSTM)", "RNN / LSTM (PyTorch)", "PyTorch RNN (LSTM) (R²=0.681, RMSE=22.78)", "#14b8a6", 1.8, "solid"),
+        ("RUL_predicted_PyTorch Transformer", "Transformer (PyTorch)", "PyTorch Transformer (R²=0.673, RMSE=23.07)", "#6366f1", 1.8, "solid"),
     ]
 
-    for col, name, color, width, dash in models_config:
+    added_models = []
+    for col, short_name, label_name, color, width, dash in models_config:
         if col in unit_rows.columns:
             pred_vals = unit_rows[col].to_numpy(dtype=float)
             fig.add_trace(
                 go.Scatter(
                     x=cycles, y=pred_vals, mode="lines",
-                    name=name,
+                    name=label_name,
                     line=dict(color=color, width=width, dash=dash),
-                    hovertemplate=f"Ciclo %{{x}}: {name} = %{{y:.1f}} ciclos<extra></extra>",
+                    hovertemplate=f"Ciclo %{{x}}: {short_name} = %{{y:.1f}} ciclos<extra></extra>",
                 ),
             )
+            added_models.append((short_name, label_name))
 
-    # Smoothed trend for primary model (XGBoost) to resolve regime transition step noise
+    # Smoothed trend for primary model (XGBoost)
+    smooth_idx = None
     if "RUL_predicted_XGBoost" in unit_rows.columns:
         smooth_xgb = unit_rows["RUL_predicted_XGBoost"].rolling(15, min_periods=1).median().to_numpy()
         fig.add_trace(
@@ -707,8 +719,9 @@ def create_rul_point_by_point_figure(rul_df: pd.DataFrame, unit_id: int, alarm_c
                 hovertemplate="Ciclo %{x}: XGBoost Tendência = %{y:.1f} ciclos<extra></extra>",
             ),
         )
+        smooth_idx = len(fig.data) - 1
 
-    # Critical replacement threshold (e.g. 20 cycles)
+    # Threshold and Alarm annotations
     fig.add_hline(
         y=20.0, line=dict(color=PALETTE["red_alert"], width=1.8, dash="longdash"),
         annotation_text="LIMIAR CRÍTICO DE INTERVENÇÃO (RUL ≤ 20 CICLOS)",
@@ -716,7 +729,6 @@ def create_rul_point_by_point_figure(rul_df: pd.DataFrame, unit_id: int, alarm_c
         annotation_font=dict(color=PALETTE["red_alert"], size=11, family="Inter"),
     )
 
-    # Markers for Alarm and EOL
     if alarm_cycle:
         fig.add_vline(
             x=alarm_cycle, line=dict(color=PALETTE["red_alert"], width=2.2, dash="dash"),
@@ -730,24 +742,66 @@ def create_rul_point_by_point_figure(rul_df: pd.DataFrame, unit_id: int, alarm_c
         annotation_font=dict(color=PALETTE["red_alert"], size=12, family="Inter"),
     )
 
-    layout = _plotly_dark_layout("Camada 5: Previsão de Vida Útil Restante (RUL): Reais vs Previstos Crus Sem Média", height=500)
+    # Build interactive dropdown buttons to isolate individual models or view all
+    total_traces = len(fig.data)
+    dropdown_buttons = [
+        dict(
+            label="Visualizar: Todos os Modelos",
+            method="update",
+            args=[{"visible": [True] * total_traces}],
+        )
+    ]
+
+    for i, (short_name, label_name) in enumerate(added_models, start=1):
+        # Trace 0 is ground truth; trace i is model
+        vis = [False] * total_traces
+        vis[0] = True # Always keep Ground Truth visible
+        vis[i] = True # Keep selected model visible
+        if short_name == "XGBoost" and smooth_idx is not None:
+            vis[smooth_idx] = True # Keep smoothed trend for XGBoost
+        dropdown_buttons.append(
+            dict(
+                label=f"Apenas: {short_name}",
+                method="update",
+                args=[{"visible": vis}],
+            )
+        )
+
+    layout = _plotly_dark_layout("Camada 5: Previsão de Vida Útil Restante (RUL): Reais vs Previstos Crus Sem Média", height=540)
     fig.update_layout(**layout)
+    fig.update_layout(
+        updatemenus=[
+            dict(
+                type="dropdown",
+                direction="down",
+                showactive=True,
+                active=0,
+                x=0.0,
+                xanchor="left",
+                y=1.16,
+                yanchor="top",
+                bgcolor=PALETTE["card"],
+                bordercolor=PALETTE["border"],
+                font=dict(color=PALETTE["white"], size=12, family="Inter, sans-serif"),
+                buttons=dropdown_buttons,
+            )
+        ]
+    )
     fig.update_xaxes(title_text="Ciclo Operacional do Motor")
     fig.update_yaxes(title_text="RUL (Ciclos Remanescentes)")
     return fig
 
 
 def create_parity_envelope_figure(rul_df: pd.DataFrame, model_col: str = "RUL_predicted_XGBoost") -> go.Figure:
-    """Figure 6: 45° parity envelope on full holdout fleet test engines."""
+    """Figure 6: 45° parity envelope on full holdout fleet test engines with Model Dropdown."""
     actual = rul_df["RUL_actual"].to_numpy(dtype=float)
-    predicted = rul_df[model_col].to_numpy(dtype=float) if model_col in rul_df else rul_df.iloc[:, 3].to_numpy(dtype=float)
 
     max_val = 135.0
     x_line = np.linspace(0, max_val, 100)
 
     fig = go.Figure()
 
-    # ±20 cycles tolerance band
+    # Trace 0: Upper tolerance band
     fig.add_trace(
         go.Scatter(
             x=x_line, y=x_line + 20, mode="lines",
@@ -755,6 +809,7 @@ def create_parity_envelope_figure(rul_df: pd.DataFrame, model_col: str = "RUL_pr
             showlegend=False, hoverinfo="skip",
         ),
     )
+    # Trace 1: Lower tolerance band fill
     fig.add_trace(
         go.Scatter(
             x=x_line, y=np.maximum(0, x_line - 20), mode="lines",
@@ -765,8 +820,7 @@ def create_parity_envelope_figure(rul_df: pd.DataFrame, model_col: str = "RUL_pr
             hoverinfo="skip",
         ),
     )
-
-    # 45° identity line
+    # Trace 2: 45° identity line
     fig.add_trace(
         go.Scatter(
             x=[0, max_val], y=[0, max_val], mode="lines",
@@ -775,22 +829,79 @@ def create_parity_envelope_figure(rul_df: pd.DataFrame, model_col: str = "RUL_pr
         ),
     )
 
-    # Scatter points (sample for rendering efficiency if large)
-    sample_idx = np.random.choice(len(actual), size=min(3000, len(actual)), replace=False) if len(actual) > 3000 else np.arange(len(actual))
-    errors = predicted[sample_idx] - actual[sample_idx]
-    colors = [PALETTE["red_alert"] if e > 0 else PALETTE["cyan_light"] for e in errors]
+    models_to_plot = [
+        ("RUL_predicted_XGBoost", "XGBoost", PALETTE["cyan_light"]),
+        ("RUL_predicted_Random Forest", "Random Forest", PALETTE["purple"]),
+        ("RUL_predicted_MLP", "Multilayer Perceptron (MLP)", "#f97316"),
+        ("RUL_predicted_PyTorch CNN", "1D CNN (PyTorch)", "#f43f5e"),
+        ("RUL_predicted_Support Vector Machine (SVM)", "Support Vector Machine (SVM)", "#818cf8"),
+        ("RUL_predicted_PyTorch RNN (LSTM)", "RNN / LSTM (PyTorch)", "#14b8a6"),
+        ("RUL_predicted_PyTorch Transformer", "Transformer (PyTorch)", "#6366f1"),
+        ("RUL_predicted_LightGBM", "LightGBM", PALETTE["emerald"]),
+        ("RUL_predicted_CatBoost", "CatBoost", PALETTE["amber"]),
+        ("RUL_predicted_MiniRocket + RidgeCV", "MiniRocket + RidgeCV", "#eab308"),
+    ]
 
-    fig.add_trace(
-        go.Scatter(
-            x=actual[sample_idx], y=predicted[sample_idx], mode="markers",
-            name="Predições da Frota de Teste (62 Motores)",
-            marker=dict(size=4.5, color=colors, opacity=0.55),
-            hovertemplate="RUL Real: %{x:.0f} | Previsto: %{y:.1f} ciclos<extra></extra>",
-        ),
-    )
+    sample_size = min(3500, len(actual))
+    rng = np.random.default_rng(42)
+    sample_idx = rng.choice(len(actual), size=sample_size, replace=False) if len(actual) > sample_size else np.arange(len(actual))
 
-    layout = _plotly_dark_layout("Envelope de Paridade de 45° RUL (Frota Hold-out: Erro Adiantado vs Atrasado)", height=500)
+    model_trace_indices = []
+    dropdown_buttons = []
+
+    for col, short_name, color in models_to_plot:
+        if col in rul_df.columns:
+            predicted = rul_df[col].to_numpy(dtype=float)
+            errors = predicted[sample_idx] - actual[sample_idx]
+            pt_colors = [PALETTE["red_alert"] if e > 0 else color for e in errors]
+            is_first = len(model_trace_indices) == 0
+
+            fig.add_trace(
+                go.Scatter(
+                    x=actual[sample_idx], y=predicted[sample_idx], mode="markers",
+                    name=f"Frota de Teste: {short_name}",
+                    marker=dict(size=4.5, color=pt_colors, opacity=0.55),
+                    visible=True if is_first else False,
+                    hovertemplate=f"RUL Real: %{{x:.0f}} | {short_name}: %{{y:.1f}} ciclos<extra></extra>",
+                ),
+            )
+            model_trace_indices.append((short_name, len(fig.data) - 1))
+
+    # Build dropdown buttons
+    for short_name, t_idx in model_trace_indices:
+        vis = [False] * len(fig.data)
+        vis[0] = True  # band
+        vis[1] = True  # band
+        vis[2] = True  # 45 line
+        vis[t_idx] = True  # this model's scatter points
+        dropdown_buttons.append(
+            dict(
+                label=f"Paridade: {short_name}",
+                method="update",
+                args=[{"visible": vis}, {"yaxis.title.text": f"RUL Previsto por {short_name} (Ciclos)"}],
+            )
+        )
+
+    layout = _plotly_dark_layout("Envelope de Paridade de 45° RUL (Frota Hold-out: Erro Adiantado vs Atrasado)", height=530)
     fig.update_layout(**layout)
+    fig.update_layout(
+        updatemenus=[
+            dict(
+                type="dropdown",
+                direction="down",
+                showactive=True,
+                active=0,
+                x=0.0,
+                xanchor="left",
+                y=1.16,
+                yanchor="top",
+                bgcolor=PALETTE["card"],
+                bordercolor=PALETTE["border"],
+                font=dict(color=PALETTE["white"], size=12, family="Inter, sans-serif"),
+                buttons=dropdown_buttons,
+            )
+        ]
+    )
     fig.update_xaxes(title_text="RUL Real (Ciclos Ground Truth)", range=[0, max_val])
     fig.update_yaxes(title_text="RUL Previsto por XGBoost (Ciclos)", range=[0, max_val])
     return fig
@@ -991,6 +1102,8 @@ def build_dashboard_html(
 
     # Generate benchmark table HTML for all models if available
     table_bench_html = ""
+    table_hypothesis_html = ""
+    table_bootstrap_html = ""
     if figures_dir:
         bench_csv = figures_dir.parent / "tables" / "t50_all_models_benchmark.csv"
         if bench_csv.exists():
@@ -1012,6 +1125,55 @@ def build_dashboard_html(
                 '<table class="sop-table" style="margin-top: 14px;">'
                 '<thead><tr><th>Modelo Avaliado</th><th>R² (Ciclo Completo)</th><th>RMSE (°C)</th><th>MAE (°C)</th><th>R² Nominal (H=50)</th></tr></thead>'
                 f'<tbody>{"".join(rows_html)}</tbody></table>'
+            )
+
+        hyp_csv = figures_dir.parent / "tables" / "thesis_hypothesis_tests.csv"
+        if hyp_csv.exists():
+            h_df = pd.read_csv(hyp_csv)
+            h_rows = []
+            for _, r in h_df.iterrows():
+                is_rej = "REJEITADA" in str(r.get("H0_Rejected", ""))
+                badge_style = "background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4);" if is_rej else "background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3);"
+                badge_text = r.get("H0_Rejected", "")
+                h_rows.append(
+                    f'<tr>'
+                    f'<td style="font-weight: 600; color: var(--cyan-light);">{r.get("Description", r.get("ID", ""))}</td>'
+                    f'<td style="font-size: 12px; color: var(--gray-text);">{r.get("H0", "")}</td>'
+                    f'<td><code style="color: var(--amber-light);">{r.get("Test", "")}</code></td>'
+                    f'<td style="text-align: right; font-family: monospace;">{float(r.get("Statistic", 0)):.2f}</td>'
+                    f'<td style="text-align: center; font-family: monospace; font-weight: bold; color: var(--white);">{r.get("p_value", "")}</td>'
+                    f'<td style="text-align: center;"><span style="padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; {badge_style}">{badge_text}</span></td>'
+                    f'<td style="font-size: 12px; color: var(--white);">{r.get("Scientific_Conclusion", "")}</td>'
+                    f'</tr>'
+                )
+            table_hypothesis_html = (
+                '<div style="overflow-x: auto; margin-top: 16px;">'
+                '<table class="sop-table" style="width: 100%; border-collapse: collapse;">'
+                '<thead><tr><th>Hipótese Científica</th><th>Hipótese Nula (H₀)</th><th>Teste Estatístico</th><th>Estatística</th><th>p-valor Extraído</th><th>Decisão Estatística</th><th>Interpretação Científica</th></tr></thead>'
+                f'<tbody>{"".join(h_rows)}</tbody></table></div>'
+            )
+
+        ci_csv = figures_dir.parent / "tables" / "thesis_bootstrap_ci.csv"
+        if ci_csv.exists():
+            c_df = pd.read_csv(ci_csv).sort_values("R2_Mean", ascending=False)
+            c_rows = []
+            for _, r in c_df.iterrows():
+                is_leader = r["Model"] == "XGBoost"
+                hl = "font-weight: 700; color: var(--cyan-light);" if is_leader else ""
+                badge = '<span class="tab-badge badge-pdm">Líder</span>' if is_leader else ""
+                c_rows.append(
+                    f'<tr style="{hl}">'
+                    f'<td><b>{r["Model"]}</b> {badge}</td>'
+                    f'<td><b>{r["R2_Mean"]:.4f}</b> <span style="font-size: 11px; color: var(--gray-text);">[{r["R2_CI_Lower"]:.4f}, {r["R2_CI_Upper"]:.4f}]</span></td>'
+                    f'<td><b>{r["RMSE_Mean"]:.2f}</b> ciclos <span style="font-size: 11px; color: var(--gray-text);">[{r["RMSE_CI_Lower"]:.2f}, {r["RMSE_CI_Upper"]:.2f}]</span></td>'
+                    f'<td><b>{r["MAE_Mean"]:.2f}</b> ciclos <span style="font-size: 11px; color: var(--gray-text);">[{r["MAE_CI_Lower"]:.2f}, {r["MAE_CI_Upper"]:.2f}]</span></td>'
+                    f'</tr>'
+                )
+            table_bootstrap_html = (
+                '<div style="overflow-x: auto; margin-top: 16px;">'
+                '<table class="sop-table" style="width: 100%; border-collapse: collapse;">'
+                '<thead><tr><th>Modelo Avaliado</th><th>R² Médio [IC 95%]</th><th>RMSE Médio [IC 95%]</th><th>MAE Médio [IC 95%]</th></tr></thead>'
+                f'<tbody>{"".join(c_rows)}</tbody></table></div>'
             )
 
     # Generate tabs HTML
@@ -1076,6 +1238,8 @@ def build_dashboard_html(
         "{{THESIS_XGB_T50_IMG}}": thesis_xgb_t50_img,
         "{{THESIS_ALL_MODELS_IMG}}": thesis_all_models_img,
         "{{TABLE_ALL_MODELS_BENCHMARK}}": table_bench_html,
+        "{{THESIS_HYPOTHESIS_TABLE}}": table_hypothesis_html,
+        "{{THESIS_BOOTSTRAP_TABLE}}": table_bootstrap_html,
         "{{UNIT_ID}}": str(summary_data["unit_id"]),
         "{{ALARM_CYCLE}}": str(summary_data["alarm_cycle"]),
         "{{EOL_CYCLE}}": str(summary_data["eol_cycle"]),

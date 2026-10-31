@@ -687,7 +687,7 @@
                 </div>
                 <p>
                     <b>2. Eliminação de Falsos Alarmes por Picos Estocásticos Isolados:</b><br>
-                    Em vez de disparar um alarme imediato ao primeiro ponto que cruza a banda de $3\sigma$ (o que causou a violação falsa de $+0.14^\circ\text{C}$ no ciclo 173), o sistema aplica o EWMA sobre a magnitude dos escores padronizados $|Z_t|$. Se um ruído isolado ocorre em um único ciclo, o EWMA sobe apenas $\alpha \cdot |Z_t| \approx 0.35 \times 3.05 \approx 1.07$, mantendo-se <b>muito abaixo do limiar de alarme de 3.0</b>. O alarme só dispara quando o desvio persiste por ciclos consecutivos, garantindo zero falso alarme na frota!
+                    O alarme compara EWMA(|Z|) com limite superior variável no tempo, calibrado pela média e variância empíricas de |Z| em resíduos OOF dos motores de treino. Na execução FD004 revisada, o FAR saudável médio foi 0,52%, a detecção foi 100% e o lead time médio foi 119,0 ciclos na frota hold-out.
                 </p>
             </div>
         </section>
@@ -770,23 +770,21 @@
                 </div>
                 <p>
                     <b>1. Por que Kernels de Comprimento L=9 com Soma Zero?</b><br>
-                    Existem exatamente <code>C(9, 3) = 84</code> combinações possíveis de posicionar três pesos +2 e seis pesos -1 em uma janela de 9 pontos. Como a soma dos pesos é estritamente zero, a convolução é **invariante a deslocamentos de nível DC (offset térmico ou barométrico)** e atua como um banco de filtros passa-banda e detectores de transientes locais. Combinados com dilatações $d \in \{1, 2, 4\}$, o MiniRocket captura tanto vibrações de alta frequência quanto ciclos térmicos lentos sem precisar de nenhum treinamento por backpropagation (tempo de ajuste $< 2.5\text{ segundos}$ vs dezenas de minutos em redes neurais recorrentes).
+                    Existem exatamente <code>C(9, 3) = 84</code> combinações possíveis de posicionar três pesos +2 e seis pesos -1 em uma janela de 9 pontos. Como a soma dos pesos é estritamente zero, a convolução é invariante a deslocamentos constantes de nível. As dilatações $d \in \{1, 2, 4\}$ capturam padrões em escalas temporais distintas. No benchmark FD004 revisado, o ajuste levou 31,22 s.
                 </p>
                 <div class="formula-card">
                     Papel 2 (Pooling PPV como Health Index Monotônico): &emsp; PPV(C, b) = (1 / M) &middot; &sum;<sub>j=1</sub><sup>M</sup> &#120128;(C<sub>j</sub> > b), &emsp; bias b = 0.40
                 </div>
                 <p>
                     <b>2. Como o PPV Converte Sinais Ruidosos em uma Reta de Degradação:</b><br>
-                    Conforme descoberto por Juliano Pádua (Slides 19 e 21), séries de telemetria brutas flutuam caoticamente entre regimes de voo. Porém, ao passar as séries pelos kernels e computar a **Proporção de Valores Positivos (PPV)** acima de um limiar de bias $b = 0.40$:
-                    <br>&bull; <b>Na Fase Saudável (Ciclos 1 a 180):</b> As oscilações do sinal novo são perfeitamente simétricas em torno da média. A resposta da convolução raramente supera o limiar $b$, mantendo o PPV confinado na faixa baixa de <b>0.15 a 0.25</b>.
-                    <br>&bull; <b>Na Fase de Degradação (Ciclos 222 a 435):</b> O desgaste aerotérmico, perda de compressão e micro-pulsos de queima deformam a simetria da onda. A resposta convolucional passa a exceder $b$ com frequência crescente, gerando uma trajetória <b>quase estritamente monotônica que sobe de 0.25 até atingir 0.85 a 0.92 no colapso final (EOL)</b>.
+                    O PPV resume a frequência de ativações acima do limiar de bias $b = 0.40$. Ele deve ser avaliado como atributo temporal: a monotonicidade, o intervalo de valores e a contribuição prognóstica são resultados empíricos por sensor e por motor, não propriedades garantidas pela convolução.
                 </p>
                 <div class="formula-card">
                     Papel 3 (Pipeline Prognóstico MiniRocket + RidgeCV para RUL): &emsp; RUL&#770; = &beta;<sub>0</sub> + &sum;<sub>k=1</sub><sup>1000</sup> &beta;<sub>k</sub> &middot; PPV<sub>k</sub>
                 </div>
                 <p>
                     <b>3. Previsão Direta de Vida Útil Restante:</b><br>
-                    Ao projetar os 21 sensores nos 1.000 kernels dilatados, o MiniRocket gera um vetor de atributos denso e linearizável. Uma simples regressão Ridge com penalidade L2 (`RidgeCV`) atinge <b>R² &approx; 0.81</b> e <b>RMSE &approx; 17.5 ciclos</b>, rivalizando com os melhores modelos de Gradient Boosting mas com uma fração do custo computacional.
+                    Com left-padding causal e os mesmos 15.889 ciclos avaliados pelos modelos tabulares, MiniRocket + RidgeCV registrou <b>R² = 0,7198</b> e <b>RMSE = 21,35 ciclos</b>. XGBoost permanece superior no hold-out: R² = 0,8156 e RMSE = 17,32 ciclos.
                 </p>
             </div>
         </section>
@@ -880,7 +878,7 @@
                         Evidência 2: Cascata Termodinâmica e Cinética Multicanal (Ciclo Brayton)
                     </h3>
                     <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 14px;">
-                        A degradação física não ocorre de forma isolada. A telemetria comprova uma cascata de falha perfeitamente alinhada com as equações de conservação de massa e energia de turbomáquinas: <b>N<sub>c</sub></b> (aceleração do carretel no ciclo 187) &rarr; <b>P<sub>30</sub></b> (queda de pressão HPC no ciclo 191) &rarr; <b>BPR</b> (desvio de razão de bypass no ciclo 215) &rarr; <b>T<sub>50</sub></b> (sobreaquecimento na exaustão LPT no ciclo 222).
+                        A degradação pode afetar diversos canais da telemetria. A ordem e os ciclos de alarme devem ser lidos nas tabelas regeneradas com calibração OOF; os valores históricos de 187, 191 e 215 foram removidos por usarem calibração in-sample.
                     </p>
                     <div style="text-align: center; overflow: hidden; border-radius: 8px; border: 1px solid var(--border);">
                         <img src="{{THESIS_CASCADE_IMG}}" alt="Evidência 2: Cascata Multissensorial" style="width: 100%; height: auto; display: block;" />
@@ -925,8 +923,39 @@
                     P(Violação Simples | Saudável) = 0.0027 &emsp;&rArr;&emsp; P(Violação Persistente k=2 | Saudável) = (0.0027)<sup>2</sup> &approx; 7.29 &times; 10<sup>-6</sup>
                 </div>
                 <p>
-                    O verdadeiro alarme preditivo com início de degradação estrutural ocorre no <b>Ciclo 222</b> para T<sub>50</sub> (e ciclos 187 a 215 para cinemática e pneumática), oferecendo <b>213 ciclos de antecedência comprovada (lead time)</b> até a pane final (Ciclo 435), sem risco de falsas paradas de produção na fábrica.
+                    Na execução OOF do canal T<sub>50</sub>, o primeiro alarme do motor #179 ocorreu no ciclo 222, com 213 ciclos até o EOL. O resultado descreve esse canal e esse motor; a taxa de falso alarme é reportada separadamente na frota.
                 </p>
+            </div>
+
+            <!-- STATISTICAL HYPOTHESIS TESTING WITH P-VALUES (ML BEST PRACTICES) -->
+            <div style="background: var(--bg-dark); border: 1px solid rgba(6, 182, 212, 0.4); border-radius: 12px; padding: 24px; margin-top: 28px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <span class="section-layer-pill" style="background: rgba(16, 185, 129, 0.15); border-color: var(--emerald); color: #34d399;">Rigor Estatístico & Testes de Hipótese (@ml-best-practices)</span>
+                        <h3 style="color: var(--cyan-light); font-family: 'Outfit', sans-serif; font-size: 20px; margin-top: 6px;">
+                            Matriz de Testes de Hipótese Científica e p-valores Extraídos
+                        </h3>
+                    </div>
+                    <div style="font-size: 12px; color: #34d399; font-family: 'JetBrains Mono', monospace; background: rgba(16, 185, 129, 0.1); padding: 4px 12px; border-radius: 6px; border: 1px solid rgba(16, 185, 129, 0.3);">
+                        Nível de Significância α = 0.05 | Rejeição de H₀ se p < 0.05
+                    </div>
+                </div>
+                <p style="color: var(--text-secondary); font-size: 13.5px; line-height: 1.6; margin-bottom: 16px;">
+                    Condução formal de testes estatísticos para confirmar hipóteses termodinâmicas, mecânicas e de superioridade algorítmica:
+                    Decomposição descritiva de regimes (H1), comparação pareada de médias por motor (H2), Ljung-Box com interpretação de não rejeição (H3), Wilcoxon sobre métricas agregadas por motor (H4/H5) e ajuste Benjamini-Hochberg.
+                </p>
+                {{THESIS_HYPOTHESIS_TABLE}}
+            </div>
+
+            <!-- BOOTSTRAP 95% CONFIDENCE INTERVALS -->
+            <div style="background: var(--bg-dark); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-top: 24px;">
+                <h3 style="color: var(--amber-light); font-family: 'Outfit', sans-serif; font-size: 18px; margin-bottom: 8px;">
+                    Intervalos de Confiança Empíricos de 95% via Bootstrap Clusterizado por Motor (500 Reamostragens)
+                </h3>
+                <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.6; margin-bottom: 14px;">
+                    Reamostragem não-paramétrica com reposição em nível de motor (evitando vazamento temporal intra-unidade) para estimar a incerteza real do R², RMSE e MAE nas 62 turbinas mantidas estritamente no conjunto de teste hold-out.
+                </p>
+                {{THESIS_BOOTSTRAP_TABLE}}
             </div>
         </section>
 
@@ -1025,18 +1054,15 @@
             </div>
 
             <div class="academic-box">
-                <h4>Fundamentação Teórica e Acadêmica: Por que Pooled R² ≈ 0.9965 NÃO é Overfitting</h4>
+                <h4>Decomposição por Regimes: resultados OOS após regeneração</h4>
                 <p>
-                    Em datasets com múltiplos regimes de voo simultâneos como o FD004 (6 envelopes de voo, 0 a 42.000 ft), a variância total da temperatura de exaustão T<sub>50</sub> atinge impressionantes <b>14.224,19&deg;C<sup>2</sup></b>.
-                    Pelo teorema de decomposição de variância ANOVA:
+                    Os números históricos desta seção foram calculados in-sample e foram retirados. A nova execução calcula as métricas no hold-out, usando médias de regime estimadas somente no treino.
                 </p>
                 <div class="formula-card">
-                    SS<sub>total</sub> = SS<sub>entre regimes</sub> + SS<sub>dentro do regime</sub>, &emsp; Entre Regimes = {{BETWEEN_VAR_PCT}}%, &ensp; Intra-Regime = 0.55%
+                    R²<sub>OOS</sub> = 1 - SSE<sub>teste</sub> / SST<sub>teste</sub>
                 </div>
                 <p>
-                    <b>99,45% da variância</b> provém da mudança física de altitude e Mach (inter-regimes), e apenas <b>0,55%</b> da variância provém de ruído interno e desgaste (intra-regime).
-                    Como o sensor virtual recebe as condições de voo (<code>setting_1, setting_2, setting_3</code>), qualquer estimador atinge R² > 0.994 na escala agregada (<i>pooled</i>).
-                    O painel direito comprova que <b>dentro de cada regime individual (<i>Within-Regime</i>)</b>, o R² real opera na faixa saudável de <b>0.41 a 0.56</b>, descartando qualquer suspeita de sobreajuste.
+                    Aguarde a regeneração das tabelas após o ajuste do K-Means padronizado para reportar valores quantitativos de decomposição e baseline.
                 </p>
             </div>
         </section>
@@ -1057,8 +1083,7 @@
             <div class="academic-box">
                 <h4>Fundamentação Teórica e Acadêmica: Gradient Boosting vs Redes Neurais para Dados Tabulares</h4>
                 <p>
-                    Confirmando as conclusões do Slide 25 de Juliano Pádua, modelos baseados em árvores com gradient boosting (<b>XGBoost</b>, <b>LightGBM</b>, <b>CatBoost</b> e <b>HistGradientBoosting</b>) superam ensembles tradicionais e redes profundas tanto em precisão de RUL (R² > 0.81, RMSE &lt; 17.5 ciclos) quanto em eficiência de treino (&lt; 0.6s).
-                    Modelos ou baselines com R² &le; 0.75 são descartados para missões críticas industriais.
+                    No hold-out FD004 revisado, XGBoost teve o melhor erro pontual entre os modelos avaliados (R² = 0,8156; RMSE = 17,32 ciclos; 0,36 s de ajuste). A interpretação comparativa deve considerar os testes pareados por motor e os intervalos BCa, além das métricas pontuais.
                 </p>
             </div>
         </section>

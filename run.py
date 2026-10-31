@@ -181,6 +181,11 @@ def main() -> int:
         help="Inclui o treinamento do modelo de Deep Learning LSTM sequencial (mais lento).",
     )
     parser.add_argument(
+        "--include-r2-investigation",
+        action="store_true",
+        help="Executa investigacao detalhada cross-subset R2 (FD001 a FD004).",
+    )
+    parser.add_argument(
         "--no-clean",
         dest="clean",
         action="store_false",
@@ -212,11 +217,12 @@ def main() -> int:
     dashboard_dir = ROOT_DIR / "results" / "dashboard"
 
     print_banner(f"Inicializando Fluxo Geral: C-MAPSS {args.subset}")
-    print(f"Configuracao experimental:", flush=True)
+    print("Configuracao experimental:", flush=True)
     print(f"  - Subconjunto: {args.subset}", flush=True)
     print(f"  - Semente: {args.seed}", flush=True)
     print(f"  - MiniRocket: {'Ativado' if args.include_minirocket else 'Desativado'}", flush=True)
     print(f"  - Deep Learning LSTM: {'Ativado' if args.include_lstm else 'Desativado'}", flush=True)
+    print(f"  - Investigacao R2: {'Ativada' if args.include_r2_investigation else 'Desativada'}", flush=True)
     print(f"  - Limpeza previa: {'Ativada' if args.clean else 'Desativada'}", flush=True)
     print(f"  - Servidor HTTP: {'Ativado na porta ' + str(args.port) if args.serve else 'Desativado'}", flush=True)
 
@@ -224,7 +230,7 @@ def main() -> int:
     if args.clean:
         clean_results_directories(output_dir, dashboard_dir)
 
-    # 2. Execucao do pipeline analitico
+    # 2. Execucao do pipeline analitico principal (H = healthy_cycle_limit)
     run_maintenance_pipeline(
         subset=args.subset,
         output_dir=output_dir,
@@ -235,14 +241,50 @@ def main() -> int:
         unit_id=args.unit_id,
     )
 
-    # 3. Compilacao do dashboard
+    # Se H=50, gerar tambem H=100 para tabelas comparativas de horizonte de envelope
+    if args.healthy_cycle_limit != 100:
+        print_banner("Execucao Auxiliar de Envelope SPC (H = 100)")
+        cmd_h100 = [
+            sys.executable,
+            str(SCRIPTS_DIR / "run_maintenance_guide.py"),
+            "--subset", args.subset,
+            "--output-dir", str(output_dir),
+            "--seed", str(args.seed),
+            "--healthy-cycle-limit", "100",
+            "--unit-id", str(args.unit_id),
+            "--no-minirocket",
+        ]
+        subprocess.run(cmd_h100, cwd=str(ROOT_DIR), check=True)
+
+    # 3. Modelos adicionais, benchmark censurado e inferencia estatistica
+    print_banner("Execucao de Modelos Adicionais e Inferencia Estatistica")
+    cmd_additional = [
+        sys.executable,
+        str(SCRIPTS_DIR / "train_additional_models.py"),
+        "--output-dir", str(output_dir),
+    ]
+    subprocess.run(cmd_additional, cwd=str(ROOT_DIR), check=True)
+
+    # 4. Geracao de figuras de tese e teoria
+    print_banner("Geracao de Figuras Academicas e Pedagogicas")
+    for script_name in ["generate_thesis_figures.py", "generate_apostila_theory_figures.py"]:
+        script_path = SCRIPTS_DIR / script_name
+        if script_path.exists():
+            subprocess.run([sys.executable, str(script_path)], cwd=str(ROOT_DIR), check=True)
+
+    # 5. Investigacao Cross-Subset R2 (opcional)
+    if args.include_r2_investigation:
+        print_banner("Execucao da Investigacao Cross-Subset R2")
+        subprocess.run([sys.executable, str(SCRIPTS_DIR / "run_r2_investigation.py")], cwd=str(ROOT_DIR), check=True)
+
+    # 6. Compilacao do dashboard
     build_dashboard(
         data_dir=output_dir,
         output_dir=dashboard_dir,
         unit_id=args.unit_id,
     )
 
-    # 4. Servidor HTTP
+    # 7. Servidor HTTP
     if args.serve:
         serve_dashboard(port=args.port, open_browser=args.open_browser)
     else:

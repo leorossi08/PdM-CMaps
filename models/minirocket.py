@@ -9,9 +9,10 @@ import torch
 import torch.nn.functional as F
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.linear_model import RidgeCV
+from sklearn.model_selection import GroupKFold
 from sklearn.preprocessing import StandardScaler
 
-from .lstm import build_engine_sequences
+from .deep_models import build_causal_engine_sequences
 
 
 class MiniRocketTransformer(BaseEstimator, TransformerMixin):
@@ -176,7 +177,7 @@ class MiniRocketTransformer(BaseEstimator, TransformerMixin):
                 batch_x = tensor_x[start_idx:end_idx].to(self.device)
                 batch_features = []
                 for d, weights_tensor, bias_tensor in self.dilation_groups_:
-                    pad_x = F.pad(batch_x, (8 * d, 0))
+                    pad_x = F.pad(batch_x, (8 * d, 0), mode="replicate")
                     out_d = F.conv1d(pad_x, weights_tensor, dilation=d)
                     ppv_d = (out_d > bias_tensor.view(1, -1, 1)).float().mean(dim=-1)
                     batch_features.append(ppv_d)
@@ -222,7 +223,7 @@ class MiniRocketRULModel:
         self.feature_cols = list(feature_cols)
         self.target_col = target_col
 
-        x, y, self.scaler = build_engine_sequences(
+        x, y, self.scaler = build_causal_engine_sequences(
             frame, self.feature_cols, target_col, self.seq_length, fit_scaler=True,
         )
         x_trans = np.transpose(x, (0, 2, 1))
@@ -240,7 +241,14 @@ class MiniRocketRULModel:
         self.feature_scaler = StandardScaler()
         ppv_scaled = self.feature_scaler.fit_transform(ppv)
 
-        self.regressor = RidgeCV(alphas=self.alphas)
+        groups = frame["unit_id"].to_numpy()
+        n_groups = len(np.unique(groups))
+        cv_splits = min(5, n_groups)
+        if cv_splits >= 2:
+            cv = list(GroupKFold(n_splits=cv_splits).split(ppv_scaled, y, groups=groups))
+            self.regressor = RidgeCV(alphas=self.alphas, cv=cv)
+        else:
+            self.regressor = RidgeCV(alphas=self.alphas)
         self.regressor.fit(ppv_scaled, y)
 
         self.fit_time = time.perf_counter() - started
@@ -251,7 +259,7 @@ class MiniRocketRULModel:
         if self.regressor is None or self.scaler is None or self.transformer is None or self.feature_scaler is None:
             raise RuntimeError("Fit the MiniRocketRULModel before calling predict")
 
-        x, y, _ = build_engine_sequences(
+        x, y, _ = build_causal_engine_sequences(
             frame, self.feature_cols, self.target_col, self.seq_length,
             scaler=self.scaler, fit_scaler=False,
         )

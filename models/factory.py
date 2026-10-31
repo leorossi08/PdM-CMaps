@@ -24,6 +24,27 @@ def get_model(name: str, random_state: int = 42, **kwargs):
         n_estimators = kwargs.pop("n_estimators", kwargs.pop("iterations", 80))
         max_depth = kwargs.pop("max_depth", kwargs.pop("depth", 6))
         return XGBRegressor(n_estimators=n_estimators, max_depth=max_depth, learning_rate=kwargs.pop("learning_rate", 0.08), random_state=random_state, n_jobs=kwargs.pop("n_jobs", -1), **kwargs)
+    if key in {"xgboost_nasa_loss", "xgboost_nasa", "xgb_nasa"}:
+        import numpy as np
+        from xgboost import XGBRegressor
+
+        def nasa_objective(y_true, y_pred):
+            diff = np.clip(y_pred - y_true, -30.0, 30.0)
+            grad = np.where(diff < 0, -(1.0 / 13.0) * np.exp(-diff / 13.0), (1.0 / 10.0) * np.exp(diff / 10.0))
+            hess = np.where(diff < 0, (1.0 / 169.0) * np.exp(-diff / 13.0), (1.0 / 100.0) * np.exp(diff / 10.0))
+            return grad, hess
+
+        n_estimators = kwargs.pop("n_estimators", kwargs.pop("iterations", 80))
+        max_depth = kwargs.pop("max_depth", kwargs.pop("depth", 6))
+        return XGBRegressor(
+            objective=nasa_objective,
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            learning_rate=kwargs.pop("learning_rate", 0.05),
+            random_state=random_state,
+            n_jobs=kwargs.pop("n_jobs", -1),
+            **kwargs,
+        )
     if key in {"catboost", "cb"}:
         from catboost import CatBoostRegressor
         iterations = kwargs.pop("iterations", kwargs.pop("n_estimators", 100))
@@ -40,8 +61,8 @@ def get_model(name: str, random_state: int = 42, **kwargs):
         return make_pipeline(StandardScaler(), ElasticNet(alpha=kwargs.pop("alpha", 0.5), l1_ratio=kwargs.pop("l1_ratio", 0.5), max_iter=3000, **kwargs))
     if key in {"bayesian_ridge", "bayes"}:
         return make_pipeline(StandardScaler(), BayesianRidge(**kwargs))
-    if key in {"linear_svr", "svr"}:
-        return make_pipeline(StandardScaler(), LinearSVR(random_state=random_state, max_iter=5000, **kwargs))
+    if key in {"svm", "svr", "linear_svr", "support_vector_machine"}:
+        return make_pipeline(StandardScaler(), LinearSVR(C=kwargs.pop("C", 1.0), random_state=random_state, max_iter=kwargs.pop("max_iter", 5000), **kwargs))
     if key == "rbf_svr":
         return make_pipeline(StandardScaler(), SVR(kernel="rbf", **kwargs))
     if key in {"knn", "knn_regressor"}:
@@ -56,6 +77,7 @@ def get_model_pool(random_state: int = 42) -> dict:
     """Return the core model families used for the RUL benchmark."""
     return {
         "Ridge": get_model("ridge", random_state, alpha=10),
+        "Support Vector Machine (SVM)": get_model("svm", random_state, C=1.0),
         "Random Forest": get_model("rf", random_state, n_estimators=60, max_depth=10),
         "Extra Trees": get_model("extra_trees", random_state, n_estimators=60, max_depth=10),
         "HistGradientBoosting": get_model("gradient_boosting", random_state, max_iter=80, max_depth=6),

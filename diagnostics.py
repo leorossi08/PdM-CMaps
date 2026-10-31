@@ -2,7 +2,7 @@
 
 import numpy as np
 import pandas as pd
-from scipy.stats import ks_2samp
+from scipy.stats import ks_2samp, wasserstein_distance
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.feature_selection import mutual_info_regression
 from sklearn.inspection import permutation_importance
@@ -12,6 +12,14 @@ from sklearn.model_selection import GroupShuffleSplit, train_test_split
 from evaluation import grouped_oof
 from schema import DEFAULT_RANDOM_STATE
 from targets import regression_metrics
+
+SUBSYSTEM_GROUPS = {
+    "Fan_Inlet": ["T2", "P2", "Nf", "NRf"],
+    "Compressors_LPC_HPC": ["T24", "T30", "P15", "P30", "Nc", "NRc"],
+    "Turbines_Combustor": ["T50", "epr", "Ps30", "BPR", "farB", "htBleed", "W31", "W32"],
+    "Controls_Demands": ["Nf_dmd", "PCNfR_dmd", "phi"],
+    "Flight_Settings": ["setting_1", "setting_2", "setting_3"],
+}
 
 
 def extra_trees_baseline(random_state: int = DEFAULT_RANDOM_STATE, **kwargs) -> ExtraTreesRegressor:
@@ -47,19 +55,26 @@ def compare_rul_subsets(datasets: dict[str, pd.DataFrame], features: list[str], 
     return summary, fold_results, predictions
 
 
-def compare_split_strategies(frame: pd.DataFrame, features: list[str], random_state: int = DEFAULT_RANDOM_STATE) -> dict:
-    """Compare a random-row split with a grouped engine holdout using one model setup."""
+def compare_split_strategies(frame: pd.DataFrame, features: list[str], n_repeats: int = 10, random_state: int = DEFAULT_RANDOM_STATE) -> dict:
+    """Compare repeated random-row splits with grouped engine holdouts."""
     x, y, groups = frame[features].to_numpy(), frame["RUL"].to_numpy(), frame["unit_id"].to_numpy()
-    row_train, row_test = train_test_split(np.arange(len(frame)), test_size=0.25, random_state=random_state)
-    group_train, group_test = next(GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=random_state).split(x, y, groups))
-    row_model = extra_trees_baseline(random_state).fit(x[row_train], y[row_train])
-    group_model = extra_trees_baseline(random_state).fit(x[group_train], y[group_train])
-    row_r2 = float(r2_score(y[row_test], row_model.predict(x[row_test])))
-    group_r2 = float(r2_score(y[group_test], group_model.predict(x[group_test])))
+    row_scores, group_scores = [], []
+    for rep in range(n_repeats):
+        row_train, row_test = train_test_split(np.arange(len(frame)), test_size=0.25, random_state=random_state + rep)
+        group_train, group_test = next(GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=random_state + rep).split(x, y, groups))
+        row_model = extra_trees_baseline(random_state + rep).fit(x[row_train], y[row_train])
+        group_model = extra_trees_baseline(random_state + rep).fit(x[group_train], y[group_train])
+        row_scores.append(float(r2_score(y[row_test], row_model.predict(x[row_test]))))
+        group_scores.append(float(r2_score(y[group_test], group_model.predict(x[group_test]))))
+
+    row_r2 = float(np.mean(row_scores))
+    group_r2 = float(np.mean(group_scores))
     return {
         "Row_random_R2": row_r2,
         "Engine_holdout_R2": group_r2,
         "Row_split_optimism_delta": row_r2 - group_r2,
+        "Row_random_R2_std": float(np.std(row_scores, ddof=1)) if n_repeats > 1 else 0.0,
+        "Engine_holdout_R2_std": float(np.std(group_scores, ddof=1)) if n_repeats > 1 else 0.0,
         "Engines_shared_in_row_split": len(set(groups[row_train]).intersection(groups[row_test])),
         "Engines_shared_in_group_split": len(set(groups[group_train]).intersection(groups[group_test])),
     }
@@ -98,7 +113,7 @@ def capacity_sweep(datasets: dict[str, pd.DataFrame], features: list[str], rando
     return pd.DataFrame(rows)
 
 
-def learning_curves(frame: pd.DataFrame, features: list[str], subset: str, repeats: int = 3, random_state: int = DEFAULT_RANDOM_STATE) -> pd.DataFrame:
+def learning_curves(frame: pd.DataFrame, features: list[str], subset: str, repeats: int = 10, random_state: int = DEFAULT_RANDOM_STATE) -> pd.DataFrame:
     """Measure holdout R² as the number of training engines increases."""
     groups = frame["unit_id"].to_numpy()
     x, y = frame[features].to_numpy(), frame["RUL"].to_numpy()
@@ -157,17 +172,31 @@ def feature_signal(frame: pd.DataFrame, features: list[str], subset: str, sample
     })
 
 
-def permutation_importances(frame: pd.DataFrame, features: list[str], subset: str, random_state: int = DEFAULT_RANDOM_STATE) -> pd.DataFrame:
-    """Compute held-out engine permutation importance on one seeded split."""
+def permutation_importances(frame: pd.DataFrame, features: list[str], subset: str, n_repeats: int = 10, random_state: int = DEFAULT_RANDOM_STATE) -> pd.DataFrame:
+    """Compute held-out engine permutation importance with subsystem mapping."""
     x, y, groups = frame[features].to_numpy(), frame["RUL"].to_numpy(), frame["unit_id"].to_numpy()
     fit_idx, score_idx = next(GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=random_state).split(x, y, groups))
     model = extra_trees_baseline(random_state, n_estimators=40).fit(x[fit_idx], y[fit_idx])
-    result = permutation_importance(model, x[score_idx], y[score_idx], scoring="r2", n_repeats=3, random_state=random_state, n_jobs=-1)
-    return pd.DataFrame({"Subpart": subset, "Feature": features, "R2_drop_mean": result.importances_mean, "R2_drop_std": result.importances_std})
+    result = permutation_importance(model, x[score_idx], y[score_idx], scoring="r2", n_repeats=n_repeats, random_state=random_state, n_jobs=-1)
+
+    # Map each feature to its physical subsystem
+    feature_to_subsystem = {}
+    for sub_name, sub_feats in SUBSYSTEM_GROUPS.items():
+        for f in sub_feats:
+            feature_to_subsystem[f] = sub_name
+
+    subsystems = [feature_to_subsystem.get(f, "Other") for f in features]
+    return pd.DataFrame({
+        "Subpart": subset,
+        "Feature": features,
+        "Subsystem": subsystems,
+        "R2_drop_mean": result.importances_mean,
+        "R2_drop_std": result.importances_std,
+    })
 
 
 def distribution_shift(high_frame: pd.DataFrame, low_frame: pd.DataFrame, features: list[str], high_name: str, low_name: str, sample_size: int = 20000, random_state: int = DEFAULT_RANDOM_STATE) -> pd.DataFrame:
-    """Compare feature distributions with KS effect sizes; p-values are descriptive only."""
+    """Compare feature distributions with KS effect sizes and Wasserstein-1 distances."""
     rows = []
     for feature in [*features, "RUL"]:
         high = high_frame[feature].dropna()
@@ -175,7 +204,23 @@ def distribution_shift(high_frame: pd.DataFrame, low_frame: pd.DataFrame, featur
         high = high.sample(n=min(sample_size, len(high)), random_state=random_state)
         low = low.sample(n=min(sample_size, len(low)), random_state=random_state)
         result = ks_2samp(high, low)
-        rows.append({"Feature": feature, "KS_statistic": float(result.statistic), "p_value": float(result.pvalue), "High_subset_median": float(high.median()), "Low_subset_median": float(low.median()), "High_subset": high_name, "Low_subset": low_name})
+
+        # Standardized Wasserstein-1 distance
+        pooled_vals = np.concatenate([high.to_numpy(), low.to_numpy()])
+        p_mean = np.mean(pooled_vals)
+        p_std = np.std(pooled_vals) if np.std(pooled_vals) > 1e-8 else 1.0
+        w_dist = float(wasserstein_distance((high.to_numpy() - p_mean) / p_std, (low.to_numpy() - p_mean) / p_std))
+
+        rows.append({
+            "Feature": feature,
+            "KS_statistic": float(result.statistic),
+            "Wasserstein_distance": w_dist,
+            "p_value": float(result.pvalue),
+            "High_subset_median": float(high.median()),
+            "Low_subset_median": float(low.median()),
+            "High_subset": high_name,
+            "Low_subset": low_name,
+        })
     return pd.DataFrame(rows).sort_values("KS_statistic", ascending=False).reset_index(drop=True)
 
 
