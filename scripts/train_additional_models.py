@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT_DIR))
 
 import numpy as np
 import pandas as pd
+from scipy import stats
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVR

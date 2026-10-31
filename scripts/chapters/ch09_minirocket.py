@@ -50,7 +50,7 @@ onde $\mathbb{I}(\cdot)$ é a função indicadora e $b_j$ é o limiar de polariz
 
 Ao projetar os canais termodinâmicos ($T_{50}, P_{30}, N_c, BPR$) através dos kernels MiniRocket, o estimador gera atributos PPV temporais. A monotonicidade deve ser avaliada por canal e frota, sem pressupô-la como propriedade garantida [1].
 
-![Figura 9.1: Trajetória estritamente monotônica do Índice de Saúde (PPV Pooling) extraído pelos 84 kernels do MiniRocket.](file:///home/leorossi/PdM-CMaps/PdM-CMaps/results/maintenance_guide_fd004/figures/minirocket_feature_filtering_padua.png)
+![Figura 9.1: Trajetória temporal do Índice de Saúde (PPV Pooling) extraído pelos 84 kernels do MiniRocket.](file:///home/leorossi/PdM-CMaps/PdM-CMaps/results/maintenance_guide_fd004/figures/minirocket_feature_filtering_padua.png)
 
 A Figura 9.1 documenta os atributos PPV para a turbina `#179`; sua trajetória é um estudo de caso e não estabelece monotonicidade nem desempenho de frota por si só.
 
@@ -72,7 +72,7 @@ O valor é rigorosamente idêntico, comprovando a invariância da saída a salto
 ### Código Python 9.1: Convolução MiniRocket e Extração de Features PPV
 ```python
 def generate_minirocket_kernels(length: int = 9, num_kernels: int = 84) -> np.ndarray:
-    """Gera o banco combinatório determinístico de 84 kernels com pesos {-1, 2}."""
+    '''Gera o banco combinatório determinístico de 84 kernels com pesos {-1, 2}.'''
     indices_combinations = list(itertools.combinations(range(length), 3))[:num_kernels]
     kernels = np.full((num_kernels, length), -1.0)
     for i, pos in enumerate(indices_combinations):
@@ -80,7 +80,7 @@ def generate_minirocket_kernels(length: int = 9, num_kernels: int = 84) -> np.nd
     return kernels
 
 def extract_causal_ppv_features(signal_window: np.ndarray, kernels: np.ndarray, dilation: int = 1) -> np.ndarray:
-    """Extrai Proporção de Valores Positivos (PPV) para janela causal deslizante."""
+    '''Extrai Proporção de Valores Positivos (PPV) para janela causal deslizante.'''
     n_kernels, k_len = kernels.shape
     eff_len = (k_len - 1) * dilation + 1
     if len(signal_window) < eff_len:

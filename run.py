@@ -186,6 +186,12 @@ def main() -> int:
         help="Executa investigacao detalhada cross-subset R2 (FD001 a FD004).",
     )
     parser.add_argument(
+        "--clean",
+        dest="clean",
+        action="store_true",
+        help="Remove resultados anteriores antes de rodar (comportamento padrao).",
+    )
+    parser.add_argument(
         "--no-clean",
         dest="clean",
         action="store_false",
@@ -252,7 +258,6 @@ def main() -> int:
             "--seed", str(args.seed),
             "--healthy-cycle-limit", "100",
             "--unit-id", str(args.unit_id),
-            "--no-minirocket",
         ]
         subprocess.run(cmd_h100, cwd=str(ROOT_DIR), check=True)
 

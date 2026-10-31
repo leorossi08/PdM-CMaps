@@ -45,7 +45,7 @@ A Figura 11.2 ilustra a curva temporal ciclo a ciclo para a turbina `#179`. Nota
 Como o motor C-MAPSS FD004 altera bruscamente de altitude e empuxo a cada ciclo, as previsões brutas de RUL pontuais apresentam pequenos choques transitórios. Para eliminar essas perturbações sem introduzir atrasos de fase prejudiciais, a Camada 6 aplica um filtro de **mediana móvel deslizante de comprimento $W = 15$ ciclos**:
 $$\widetilde{\text{RUL}}(t) = \text{mediana}_{\tau \in [0, W-1]} \widehat{\text{RUL}}(t - \tau)$$
 
-A mediana móvel rejeita categoricamente *outliers* isolados de transição de voo, proporcionando uma curva estritamente monotônica e estável para a tomada de decisão no cockpit industrial.
+A mediana móvel rejeita categoricamente outliers isolados de transição de voo, proporcionando uma trajetória suave e estável para a tomada de decisão no cockpit industrial.
 
 ### Exemplo Teórico 11.1: Impacto do Platô na Função de Perda Quadrática
 Considere a perda de treino com alvo linear estrito vs linear por partes:
@@ -56,14 +56,14 @@ Com o alvo truncado em $RUL_{max} = 125$, ambos recebem exatamente o mesmo rótu
 ### Código Python 11.1: Alvo RUL por Partes e Filtro de Tendência por Mediana
 ```python
 def create_piecewise_rul_target(df: pd.DataFrame, max_rul: int = 125) -> pd.Series:
-    """Calcula o alvo de RUL linear por partes conforme padronização NASA."""
+    '''Calcula o alvo de RUL linear por partes conforme padronização NASA.'''
     eol_per_unit = df.groupby("unit_id")["cycle"].transform("max")
     linear_rul = eol_per_unit - df["cycle"]
     clipped_rul = linear_rul.clip(upper=max_rul)
     return clipped_rul
 
 def apply_median_trajectory_filter(predictions: pd.Series, window: int = 15) -> pd.Series:
-    """Aplica filtro causal de mediana móvel para eliminar transientes de voo."""
+    '''Aplica filtro causal de mediana móvel para eliminar transientes de voo.'''
     return predictions.rolling(window=window, min_periods=1).median()
 ```
 """

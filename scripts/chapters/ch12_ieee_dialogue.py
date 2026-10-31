@@ -30,9 +30,9 @@ Abaixo, o ecossistema PdM-CMaps estabelece um diálogo científico rigoroso com 
 ## 12.2 Resposta à RQ2: GBDTs vs Deep Learning e Transformers em Séries Tabulares
 * **A Crítica de Epifani et al. [2]:** O artigo questiona a hegemonia presumida de arquiteturas neurais complexas (Transformers, LSTMs), demonstrando que modelos lineares simples ou árvores de decisão frequentemente igualam ou superam redes profundas em séries temporais estruturadas.
 * **A Evidência Experimental do PdM-CMaps:** O benchmark com 14 modelos na frota hold-out confirma cabalmente a tese dos autores da IEEE:
-  * O modelo **XGBoost** atingiu **$R^2 = 0,8163$** com tempo de treinamento de apenas **$0,70$ segundos**.
-  * Em contraste, o **PyTorch Transformer** atingiu **$R^2 = 0,6742$** consumindo **$57,8$ segundos** ($82\times$ mais lento), e a **PyTorch LSTM** atingiu **$R^2 = 0,6801$** consumindo **$21,9$ segundos**.
-  * O teste não-paramétrico pareado de Wilcoxon atesta a superioridade estatística do XGBoost sobre o Transformer com **$p = 1,17 \times 10^{-131}$**.
+  * O modelo **XGBoost** atingiu **$R^2 \approx 0,839$** com tempo de treinamento sub-segundo ($< 1$ segundo).
+  * Em contraste, o **PyTorch Transformer** ($R^2 \approx 0,773$) e a **PyTorch LSTM** ($R^2 \approx 0,794$) exigiram tempos de processamento até $50\times$ maiores em CPU.
+  * O teste não-paramétrico pareado de Wilcoxon em nível de motor com controle Benjamini-Hochberg ($H_5$) atesta a superioridade estatística do XGBoost sobre o Transformer com $p = 5,46 \times 10^{-5}$ e sobre a LSTM com $p = 1,54 \times 10^{-6}$ (Hodges-Lehmann $\Delta \approx 2,17$ ciclos de vantagem para o XGBoost).
 
 Em séries temporais de telemetria industrial com forte estrutura tabular e descontinuidades físicas de regime, os algoritmos baseados em árvores particionam o espaço com hiperplanos ortogonais sem sofrer com desvanecimento de gradientes ou perturbações de escala.
 

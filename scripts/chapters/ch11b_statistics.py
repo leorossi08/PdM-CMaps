@@ -46,7 +46,7 @@ $$\text{IC}_{95\%} = \left[ \theta^*_{(0,025)}, \; \theta^*_{(0,975)} \right]$$
 ### Código Python 11B.1: Algoritmo de Bootstrap Clusterizado de Frota
 ```python
 def compute_clustered_fleet_bootstrap(df_predictions: pd.DataFrame, n_bootstraps: int = 500, seed: int = 42):
-    """Calcula intervalos de confiança de 95% via bootstrap clusterizado por turbina."""
+    # Calcula intervalos de confianca de 95% via bootstrap clusterizado por turbina.
     np.random.seed(seed)
     unique_engines = df_predictions["unit_id"].unique()
     n_engines = len(unique_engines)

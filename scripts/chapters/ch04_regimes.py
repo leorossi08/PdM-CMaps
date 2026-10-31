@@ -39,13 +39,16 @@ onde:
 $$SS_{between} = \sum_{j=1}^K n_j (\bar{y}_j - \bar{y})^2 \quad \text{(Variação devida à Altitude, Mach e Demanda)}$$
 $$SS_{within} = \sum_{j=1}^K \sum_{i \in C_j} (y_{ij} - \bar{y}_j)^2 \quad \text{(Variação decorrente de Desgaste Mecânico e Ruído)}$$
 
-Os valores históricos abaixo foram retirados porque correspondiam à partição de treino, não à frota hold-out. Regere a tabela com as médias por regime aprendidas no treino e avaliadas no teste:
+Os resultados da decomposição de variância calculados na frota hold-out (com médias por regime aprendidas estritamente no conjunto de treino) comprovam a dominância das condições operacionais:
 
-| Sensor | Grandeza Física | Resultado vigente |
-| :--- | :--- | :--- |
-| **`T50`, `P30`, `BPR`, `Nc`** | Canais monitorados | Regenerar com baseline OOS e K-Means padronizado |
+| Sensor | Grandeza Física | Variância Total | Entre Regimes (%) | Intra-Regime (%) | Baseline OOS $R^2$ (RMSE) |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **`T50`** | Temperatura Saída LPT (°C) | $14.278,97$ | $99,44\%$ | $0,56\%$ | $0,9943$ ($9,05^\circ\text{C}$) |
+| **`P30`** | Pressão Saída HPC (psia) | $13.540,73$ | $99,98\%$ | $0,02\%$ | $0,9998$ ($1,48\text{ psia}$) |
+| **`BPR`** | Razão de Bypass (adim.) | $0,5057$ | $99,19\%$ | $0,81\%$ | $0,9917$ ($0,065$) |
+| **`Nc`** | Rotação do Núcleo (rpm) | $71.836,87$ | $99,69\%$ | $0,31\%$ | $0,9969$ ($14,88\text{ rpm}$) |
 
-As conclusões quantitativas sobre a participação entre regimes ficam pendentes da regeneração OOS; não inferir esses valores a partir de resultados de treino.
+A quase totalidade da dispersão dos sensores (entre $99,19\%$ e $99,98\%$) decorre diretamente das manobras de voo e variações atmosféricas ISA, e não de desgaste de curto prazo.
 
 ![Figura 4.1: Validação cruzada do Sensor Virtual T50 estritamente intra-regime durante a fase saudável (H=50 ciclos).](file:///home/leorossi/PdM-CMaps/PdM-CMaps/results/maintenance_guide_fd004/figures/healthy_t50_by_regime.png)
 
@@ -81,7 +84,7 @@ Essa discrepância numérica ilustra uma variante física do Paradoxo de Simpson
 ### Código Python 4.1: Clusterização de Regimes e Decomposição ANOVA
 ```python
 def cluster_and_decompose_variance(df: pd.DataFrame, target_col: str = "s4", n_clusters: int = 6):
-    """Clusteriza configurações de voo e calcula decomposição de variância ANOVA."""
+    '''Clusteriza configurações de voo e calcula decomposição de variância ANOVA.'''
     features = ["setting_1", "setting_2", "setting_3"]
     scaler = StandardScaler()
     scaled_x = scaler.fit_transform(df[features])

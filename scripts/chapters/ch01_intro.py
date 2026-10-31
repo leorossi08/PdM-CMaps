@@ -32,11 +32,11 @@ No entanto, o sucesso operacional de um sistema preditivo depende de uma transi�
 |                                                                                                                       |
 |  [Camada 4: Detecção por Envelope ("Embrulho") & Geometria]                                                           |
 |     Corredor Estocástico Shewhart SPC (μ ± 3σ) + Rolling Convex Hull (Picos e Vales)                                  |
-|     --> Regra de Persistência Industrial (k ≥ 2) -> ZERO Falsos Alarmes (FAR=0.0%) e Lead Time de +213 a +248 ciclos  |
+|     --> Regra de Persistência Industrial (k ≥ 2) -> Alarme Online SPC (cycle > H) e Lead Time Operacional Condicional  |
 |                                                                                                                       |
 |  [Camada 5: Enriquecimento Convolucional MiniRocket]                                                                  |
 |     84 Kernels Determinísticos L=9 com Pesos {-1, 2} (Soma Nula: Invariância a Offset DC de Altitude)                |
-|     --> Pooling PPV (Proporção de Valores Positivos) -> Health Index Estritamente Monotônico (0.20 -> 0.85+)          |
+|     --> Pooling PPV (Proporção de Valores Positivos) -> Health Index Monotônico por Projeção Linear (0.20 -> 0.85+)   |
 |                                                                                                                       |
 |  [Camada 6: Prognóstico de Vida Útil Restante (RUL)]                                                                  |
 |     Modelos ML (XGBoost, LightGBM, CatBoost, Random Forest, MLP, MiniRocket + RidgeCV)                                |
@@ -62,7 +62,7 @@ Abaixo apresenta-se a estrutura em nível de arquitetura de software implementad
 
 ```python
 class PredictivePipelineOrchestrator:
-    """Orquestrador das 7 Camadas do Sinal à Decisão (Pádua / NASA C-MAPSS)."""
+    '''Orquestrador das 7 Camadas do Sinal à Decisão (Pádua / NASA C-MAPSS).'''
 
     def __init__(self, healthy_limit: int = 50, ewma_alpha: float = 0.35, k_persist: int = 2):
         self.healthy_limit = healthy_limit
@@ -74,7 +74,7 @@ class PredictivePipelineOrchestrator:
         self.rul_model = None
 
     def execute_pipeline(self, raw_telemetry: pd.DataFrame) -> dict:
-        """Executa sequencialmente da telemetria bruta ao despacho operacional."""
+        '''Executa sequencialmente da telemetria bruta ao despacho operacional.'''
         # Camada 1: Condicionamento de Sinais
         clean_signals = self._apply_causal_ewma(raw_telemetry, alpha=self.ewma_alpha)
         # Camada 2: Desacoplamento Físico de Regimes

@@ -67,13 +67,13 @@ A dispersão do sinal cai de $\pm 15^\circ\text{C}$ (intervalo de $\pm 3\sigma$)
 ### Código Python 6.1: Filtro Causal EWMA Vetorizado
 ```python
 def apply_causal_ewma(series: pd.Series, alpha: float = 0.35) -> pd.Series:
-    """Aplica filtro exponencial ponderado móvel estritamente causal."""
+    '''Aplica filtro exponencial ponderado móvel estritamente causal.'''
     if not 0.0 < alpha <= 1.0:
         raise ValueError("O fator de suavização alpha deve pertencer ao intervalo (0, 1]")
     return series.ewm(alpha=alpha, adjust=False).mean()
 
 def filter_engine_telemetry(engine_df: pd.DataFrame, sensor_cols: list[str], alpha: float = 0.35) -> pd.DataFrame:
-    """Filtra canais de telemetria por unidade de motor mantendo ordenação temporal."""
+    '''Filtra canais de telemetria por unidade de motor mantendo ordenação temporal.'''
     filtered = engine_df.sort_values("cycle").copy()
     for col in sensor_cols:
         filtered[f"{col}_ewma"] = apply_causal_ewma(filtered[col], alpha=alpha)

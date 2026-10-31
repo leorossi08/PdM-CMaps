@@ -94,7 +94,7 @@ $$\mu_e = -0,08^\circ\text{C}, \quad \sigma_e = 2,12^\circ\text{C} \quad \implie
 ### Código Python 7.1: Detector de Envelope Shewhart com Trava de Persistência
 ```python
 class EnvelopeAnomalyDetector:
-    """Implementa corridor Shewhart SPC com persistência temporal k>=2."""
+    '''Implementa corridor Shewhart SPC com persistência temporal k>=2.'''
 
     def __init__(self, k_sigma: float = 3.0, min_consecutive: int = 2):
         self.k_sigma = k_sigma
@@ -103,7 +103,7 @@ class EnvelopeAnomalyDetector:
         self.lcl = None
 
     def calibrate(self, healthy_residuals: np.ndarray):
-        """Calcula limites de controle estatístico sobre resíduos saudáveis."""
+        '''Calcula limites de controle estatístico sobre resíduos saudáveis.'''
         mu = np.mean(healthy_residuals)
         sigma = np.std(healthy_residuals)
         self.ucl = mu + self.k_sigma * sigma
@@ -111,7 +111,7 @@ class EnvelopeAnomalyDetector:
         return self
 
     def score_trace(self, residuals: np.ndarray) -> tuple[np.ndarray, int | None]:
-        """Avalia violações consecutivas e retorna índice do primeiro alarme."""
+        '''Avalia violações consecutivas e retorna índice do primeiro alarme.'''
         violations = (residuals > self.ucl) | (residuals < self.lcl)
         alarm_idx = None
         consecutive = 0

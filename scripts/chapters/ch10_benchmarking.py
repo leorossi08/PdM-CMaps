@@ -1,6 +1,9 @@
 """Chapter 10: Modelagem e Benchmark Multi-Algoritmo (Reconstrução Térmica de T50)."""
 
+from book_tables import load_tables
+
 def get_chapter():
+    tables = load_tables()
     md = r"""# Capítulo 10: Modelagem e Benchmark Multi-Algoritmo (Reconstrução Térmica de T50)
 
 ## 10.1 Taxonomia Abrangente das Famílias Algorítmicas Avaliadas
@@ -31,28 +34,13 @@ A constante de penalidade para previsões atrasadas ($a_2 = 10$) penaliza o erro
 ## 10.3 Resultados Comparativos Consolidados na Frota Hold-out
 A tabela abaixo consolida os resultados preditivos apurados estritamente sobre os **62 motores mantidos no teste hold-out disjunto (15.890 ciclos totais)**:
 
-| Modelo | Família | $R^2$ Hold-out | RMSE (Ciclos) | MAE (Ciclos) | NASA Score | Previsões Atrasadas (%) | Tempo Ajuste (s) |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **XGBoost** | GBDT DMatrix Exact | **0,8163** | **17,24** | **11,24** | **3.892** | **44,1%** | **0,70s** |
-| **LightGBM** | GBDT Leaf-wise | 0,8121 | 17,45 | 11,48 | 4.015 | 45,2% | 0,28s |
-| **Random Forest** | Ensemble Bagging | 0,8099 | 17,54 | 11,53 | 4.110 | 44,8% | 4,77s |
-| **HistGradientBoosting** | GBDT Histograma | 0,8093 | 17,58 | 11,54 | 4.145 | 45,0% | 0,63s |
-| **MLP** | Deep Learning Feedforward | 0,7996 | 18,01 | 11,77 | 4.380 | 46,1% | 8,34s |
-| **CatBoost** | GBDT Oblivious | 0,7873 | 18,57 | 12,75 | 5.210 | 48,3% | 0,67s |
-| **PyTorch 1D CNN** | Deep Learning Convolucional 1D | 0,7718 | 19,21 | 12,76 | 6.890 | 49,2% | 51,4s |
-| **Extra Trees** | Ensemble Bagging | 0,7676 | 19,41 | 14,38 | 7.120 | 47,8% | 1,22s |
-| **Ridge** | Linear Regularizado | 0,7245 | 21,15 | 16,87 | 11.450 | 51,2% | 0,03s |
-| **MiniRocket + RidgeCV** | Convolução Determinística | 0,7115 | 21,90 | 16,59 | 12.380 | 50,4% | 20,8s |
-| **Support Vector Machine (SVM)** | Kernel / Linear SVR | 0,7100 | 21,67 | 17,08 | 13.120 | 52,1% | 0,25s |
-| **PyTorch RNN (LSTM)** | Deep Learning Recorrente | 0,6801 | 22,73 | 16,31 | 16.420 | 53,8% | 21,9s |
-| **PyTorch Transformer** | Deep Learning Sequencial | 0,6742 | 22,94 | 15,25 | 17.890 | 54,6% | 57,8s |
-| **Baseline (Mean RUL)** | Linha de Base | 0,0000 | 40,25 | 34,12 | 1.840.000 | 50,0% | 0,00s |
+""" + tables["bench_md"] + r"""
 
 ![Figura 10.1: Benchmark comparativo de R2 no teste hold-out de todos os modelos avaliados (GBDTs, Ensembles, Redes Neurais, SVM e Transformers).](file:///home/leorossi/PdM-CMaps/PdM-CMaps/results/maintenance_guide_fd004/figures/rul_model_r2_comparison.png)
 
 A Figura 10.1 sintetiza o panorama de desempenho:
-1. **Supremacia dos GBDTs:** Os estimadores baseados em árvores impulsionadas (XGBoost com $R^2 = 0,8163$ e LightGBM com $R^2 = 0,8121$) lideram com folga estatística incontestável.
-2. **Desempenho Inferior de Redes Recorrentes e Transformers:** O PyTorch Transformer ($R^2 = 0,6742$) e a LSTM ($R^2 = 0,6801$) exigiram tempos de processamento até $80\times$ maiores, apresentando acurácia inferior aos modelos baseados em árvores, confirmando as conclusões do artigo do IEEE CIM 2026 [2].
+1. **Supremacia dos GBDTs:** Os estimadores baseados em árvores impulsionadas (XGBoost, LightGBM, HistGradientBoosting e Random Forest) lideram com folga estatística e estabilidade em validação cruzada agrupada por motor.
+2. **Desempenho e Eficiência de Deep Learning vs GBDTs:** Enquanto arquiteturas neurais sequenciais exigem tempos de processamento substancialmente mais elevados, os modelos baseados em árvores com engenharia causal de atributos oferecem acurácia de ponta com latência de treino sub-segundo, alinhando-se às conclusões do artigo do IEEE CIM 2026 [2].
 
 ### Exemplo Teórico 10.1: Cálculo Comparativo de Penalidade da NASA
 Considere dois estimadores com erro absoluto idêntico de 10 ciclos:
@@ -69,7 +57,7 @@ A penalização pelo atraso atinge mais que o dobro ($+110\%$), punindo com seve
 ### Código Python 10.1: Função de Perda Assimétrica da NASA
 ```python
 def compute_nasa_scoring_function(y_true: np.ndarray, y_pred: np.ndarray) -> tuple[float, float]:
-    """Calcula a métrica oficial de pontuação assimétrica da NASA e porcentagem de previsões atrasadas."""
+    '''Calcula a métrica oficial de pontuação assimétrica da NASA e porcentagem de previsões atrasadas.'''
     diff = y_pred - y_true
     scores = np.where(
         diff < 0,

@@ -63,10 +63,10 @@ Avaliando a trajetória histórica do motor hold-out `#179` (vida total de 435 c
 ### Código Python 13.1: Motor de Decisão Operacional do SOP de Fábrica
 ```python
 class SOPDecisionEngine:
-    """Motor de regras do Procedimento Operacional Padrão (SOP industrial)."""
+    '''Motor de regras do Procedimento Operacional Padrão (SOP industrial).'''
 
     def evaluate_engine_status(self, rul_estimate: float, active_alarms: list[str], max_residual_t50: float) -> dict:
-        """Determina o nível de ação, cor do indicador e diretriz técnica."""
+        '''Determina o nível de ação, cor do indicador e diretriz técnica.'''
         if rul_estimate < 20.0 or max_residual_t50 > 15.0:
             return {
                 "level": 3,

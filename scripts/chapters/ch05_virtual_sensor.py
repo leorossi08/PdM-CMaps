@@ -71,14 +71,14 @@ Ultrapassando o limiar de três sigmas ($+3\sigma$) com margem estatística avas
 ### Código Python 5.1: Calibração e Inferência do Sensor Virtual de Linha de Base
 ```python
 class VirtualSensorBaseline:
-    """Gêmeo digital estatístico calibrado estritamente na fase saudável."""
+    '''Gêmeo digital estatístico calibrado estritamente na fase saudável.'''
 
     def __init__(self, healthy_limit: int = 50):
         self.healthy_limit = healthy_limit
         self.models = {}
 
     def fit(self, train_df: pd.DataFrame, target_col: str, feature_cols: list[str]):
-        """Ajusta regressores Ridge regularizados por regime de voo."""
+        '''Ajusta regressores Ridge regularizados por regime de voo.'''
         healthy_df = train_df[train_df["cycle"] <= self.healthy_limit]
         for regime_id, group in healthy_df.groupby("regime"):
             model = RidgeCV(alphas=np.logspace(-3, 3, 10))
@@ -87,7 +87,7 @@ class VirtualSensorBaseline:
         return self
 
     def predict_residuals(self, test_df: pd.DataFrame, target_col: str, feature_cols: list[str]) -> np.ndarray:
-        """Gera resíduos de degradação: e(t) = y(t) - y_hat(t)."""
+        '''Gera resíduos de degradação: e(t) = y(t) - y_hat(t).'''
         residuals = np.zeros(len(test_df))
         for regime_id, group in test_df.groupby("regime"):
             idx = group.index

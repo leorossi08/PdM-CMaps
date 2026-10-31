@@ -40,27 +40,29 @@ import bibliography
 from book_tables import load_tables
 from book_config import FIGURE_METADATA
 
+CHAPTERS_MAP = [
+    ("00_front_matter.md", get_front_matter),
+    ("01_intro.md", ch01_intro.get_chapter),
+    ("02_raw_data.md", ch02_raw_data.get_chapter),
+    ("03_engineering.md", ch03_engineering.get_chapter),
+    ("04_regimes.md", ch04_regimes.get_chapter),
+    ("05_virtual_sensor.md", ch05_virtual_sensor.get_chapter),
+    ("06_filtering.md", ch06_filtering.get_chapter),
+    ("07_envelope.md", ch07_envelope.get_chapter),
+    ("08_degradation_proof.md", ch08_degradation_proof.get_chapter),
+    ("09_minirocket.md", ch09_minirocket.get_chapter),
+    ("10_benchmarking.md", ch10_benchmarking.get_chapter),
+    ("11_rul.md", ch11_rul.get_chapter),
+    ("11b_statistics.md", ch11b_statistics.get_chapter),
+    ("12_ieee_dialogue.md", ch12_ieee_dialogue.get_chapter),
+    ("13_sop_cockpit.md", ch13_sop_cockpit.get_chapter),
+    ("14_catalog.md", ch14_catalog.get_chapter),
+    ("15_conclusions.md", ch15_conclusions.get_chapter),
+    ("16_bibliography.md", bibliography.get_markdown_bibliography),
+]
+
 def assemble_markdown():
-    chapters = [
-        get_front_matter(),
-        ch01_intro.get_chapter(),
-        ch02_raw_data.get_chapter(),
-        ch03_engineering.get_chapter(),
-        ch04_regimes.get_chapter(),
-        ch05_virtual_sensor.get_chapter(),
-        ch06_filtering.get_chapter(),
-        ch07_envelope.get_chapter(),
-        ch08_degradation_proof.get_chapter(),
-        ch09_minirocket.get_chapter(),
-        ch10_benchmarking.get_chapter(),
-        ch11_rul.get_chapter(),
-        ch11b_statistics.get_chapter(),
-        ch12_ieee_dialogue.get_chapter(),
-        ch13_sop_cockpit.get_chapter(),
-        ch14_catalog.get_chapter(),
-        ch15_conclusions.get_chapter(),
-        bibliography.get_markdown_bibliography(),
-    ]
+    chapters = [fn() for _, fn in CHAPTERS_MAP]
     return "\n\n---\n\n".join(chapters)
 
 
@@ -450,6 +452,14 @@ Base Experimental: NASA Turbofan C-MAPSS FD001 e FD004}
 
 
 def main():
+    chapters_dir = DOCS_DIR / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[INFO] Exporting {len(CHAPTERS_MAP)} individual chapters to {chapters_dir}...")
+    for fname, fn in CHAPTERS_MAP:
+        ch_text = fn()
+        (chapters_dir / fname).write_text(ch_text, encoding="utf-8")
+    print(f"[SUCCESS] Wrote all individual chapters to {chapters_dir}")
+
     print("[INFO] Assembling full Markdown treatise...")
     md_content = assemble_markdown()
     md_path = DOCS_DIR / "learn.md"
@@ -465,7 +475,7 @@ def main():
     print("[INFO] Compiling learn.tex to learn.pdf using pdflatex (Pass 1)...")
     res1 = subprocess.run(
         ["pdflatex", "-interaction=nonstopmode", "-output-directory=" + str(DOCS_DIR), str(tex_path)],
-        capture_output=True, text=True, cwd=str(DOCS_DIR)
+        capture_output=True, text=True, errors="replace", cwd=str(DOCS_DIR)
     )
     if res1.returncode != 0:
         print("[WARNING] Pass 1 finished with warnings/errors. Tail of output:")
@@ -475,7 +485,7 @@ def main():
     print("[INFO] Compiling learn.tex to learn.pdf using pdflatex (Pass 2 for TOC, refs and citations)...")
     res2 = subprocess.run(
         ["pdflatex", "-interaction=nonstopmode", "-output-directory=" + str(DOCS_DIR), str(tex_path)],
-        capture_output=True, text=True, cwd=str(DOCS_DIR)
+        capture_output=True, text=True, errors="replace", cwd=str(DOCS_DIR)
     )
 
     pdf_path = DOCS_DIR / "learn.pdf"

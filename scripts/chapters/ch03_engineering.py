@@ -54,7 +54,7 @@ Na ausência de regularização ($\lambda = 0$), a matriz de Gram $\mathbf{X}^T 
 ### Código Python 3.1: Particionamento Disjunto por Unidade e Filtragem de Canais
 ```python
 def prepare_disjoint_fleet_data(df: pd.DataFrame, test_size: float = 0.25, seed: int = 42):
-    """Realiza limpeza de sensores invariantes e particionamento disjunto de frota."""
+    '''Realiza limpeza de sensores invariantes e particionamento disjunto de frota.'''
     # 1. Identificar e descartar sensores com desvio padrão nulo ou determinísticos
     stds = df[[f"s{i}" for i in range(1, 22)]].std()
     invariant_cols = stds[stds < 1e-6].index.tolist()

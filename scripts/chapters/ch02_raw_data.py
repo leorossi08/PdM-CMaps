@@ -97,7 +97,7 @@ Portanto, a temperatura de admissão varia mais de $74^\circ\text{R}$ ($41^\circ
 ### Código Python 2.1: Ingestão de Telemetria e Validação de Schema
 ```python
 def load_and_validate_cmapss_telemetry(file_path: str) -> pd.DataFrame:
-    """Carrega arquivo bruto de telemetria C-MAPSS e atribui schema padronizado."""
+    '''Carrega arquivo bruto de telemetria C-MAPSS e atribui schema padronizado.'''
     columns = [
         "unit_id", "cycle", "setting_1", "setting_2", "setting_3"
     ] + [f"s{i}" for i in range(1, 22)]

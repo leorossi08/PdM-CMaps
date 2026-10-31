@@ -55,7 +55,7 @@ O p-valor bicaudal associado é $p = 3,61 \times 10^{-14}$, rejeitando com signi
 ### Código Python 8.1: Suite Estatística de Verificação de Hipóteses
 ```python
 def run_statistical_degradation_proof(residuals_healthy: np.ndarray, residuals_degraded: np.ndarray):
-    """Executa diagnósticos de autocorrelação; a comparação de fases requer dados por motor."""
+    '''Executa diagnósticos de autocorrelação; a comparação de fases requer dados por motor.'''
     # A comparação de fases é realizada em dados agregados por motor no pipeline estatístico.
     t_stat, t_pval = ttest_ind(residuals_degraded, residuals_healthy, equal_var=False)
     
